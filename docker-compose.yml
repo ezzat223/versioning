@@ -1,0 +1,147 @@
+services:
+  # PostgreSQL Database for lakeFS metadata
+  postgres:
+    image: postgres:15-alpine
+    container_name: lakefs-postgres
+    environment:
+      POSTGRES_USER: lakefs
+      POSTGRES_PASSWORD: lakefs_password
+      POSTGRES_DB: lakefs
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lakefs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lakefs-network
+
+  # MinIO S3-compatible object storage
+  minio:
+    image: minio/minio:latest
+    container_name: lakefs-minio
+    command: server /data --console-address ":9001"
+    mem_limit: 4g
+    cpus: 2.0
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+      MINIO_API_REQUESTS_MAX: 1600
+      MINIO_API_REQUESTS_DEADLINE: 10s
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lakefs-network
+
+  # MinIO Client to create initial buckets
+  minio-setup:
+    image: minio/mc:latest
+    container_name: lakefs-minio-setup
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin123;
+      /usr/bin/mc mb myminio/lakefs-storage || true;
+      /usr/bin/mc mb myminio/mlflow-artifacts || true;
+      exit 0;
+      "
+    networks:
+      - lakefs-network
+
+  # lakeFS Server
+  lakefs:
+    image: treeverse/lakefs:latest
+    container_name: lakefs-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    environment:
+      LAKEFS_DATABASE_TYPE: postgres
+      LAKEFS_DATABASE_POSTGRES_CONNECTION_STRING: postgres://lakefs:lakefs_password@postgres:5432/lakefs?sslmode=disable
+      LAKEFS_AUTH_ENCRYPT_SECRET_KEY: "some-random-secret-key-change-me-in-production"
+      LAKEFS_BLOCKSTORE_TYPE: s3
+      LAKEFS_BLOCKSTORE_S3_FORCE_PATH_STYLE: "true"
+      LAKEFS_BLOCKSTORE_S3_ENDPOINT: http://minio:9000
+      LAKEFS_BLOCKSTORE_S3_DISCOVER_BUCKET_REGION: "false"
+      LAKEFS_BLOCKSTORE_S3_CREDENTIALS_ACCESS_KEY_ID: minioadmin
+      LAKEFS_BLOCKSTORE_S3_CREDENTIALS_SECRET_ACCESS_KEY: minioadmin123
+      LAKEFS_BLOCKSTORE_S3_MAX_RETRIES: 5
+      LAKEFS_BLOCKSTORE_S3_REQUEST_TIMEOUT: 60s
+      LAKEFS_LOGGING_LEVEL: INFO
+      LAKEFS_STATS_ENABLED: "true"
+      LAKEFS_BLOCKSTORE_DEFAULT_NAMESPACE_PREFIX: s3://lakefs-storage/
+    volumes:
+      - lakefs_data:/home/lakefs
+    networks:
+      - lakefs-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/_health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MLflow Tracking Server
+  mlflow:
+    image: python:3.11-slim
+    container_name: mlflow-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    ports:
+      - "5001:5000"
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin123
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      MLFLOW_S3_IGNORE_TLS: "true"
+    command: >
+      bash -c "
+      pip install mlflow boto3 psycopg2-binary &&
+      mlflow server 
+      --host 0.0.0.0 
+      --port 5000
+      --backend-store-uri postgresql://lakefs:lakefs_password@postgres:5432/lakefs 
+      --default-artifact-root s3://mlflow-artifacts/
+      "
+    networks:
+      - lakefs-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+  lakefs_data:
+    driver: local
+
+networks:
+  lakefs-network:
+    driver: bridge
