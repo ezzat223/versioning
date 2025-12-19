@@ -2,6 +2,8 @@
 Main training script demonstrating full reproducibility with Git + MLflow.
 """
 import argparse
+import os
+import warnings
 import mlflow
 import mlflow.sklearn
 from sklearn.ensemble import RandomForestClassifier
@@ -11,7 +13,11 @@ import pandas as pd
 from src.utils import get_git_metadata, validate_git_state, print_git_info
 from src.data_loader import IrisDataLoader
 
-mlflow.set_tracking_uri("http://127.0.0.1:5001")
+# Suppress specific MLflow warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='mlflow.data.dataset_source_registry')
+warnings.filterwarnings('ignore', category=UserWarning, module='mlflow.types.utils')
+warnings.filterwarnings('ignore', message='.*artifact_path.*deprecated.*')
+
 
 def parse_args():
     """Parse command line arguments."""
@@ -32,7 +38,7 @@ def parse_args():
                         help="Path to dataset")
     
     # MLflow parameters
-    parser.add_argument("--experiment-name", type=str, default="iris-classifier-mlops",
+    parser.add_argument("--experiment-name", type=str, default="iris-classifier-mlops-2",
                         help="MLflow experiment name")
     parser.add_argument("--model-name", type=str, default="iris-classifier",
                         help="Model name for MLflow registry")
@@ -73,6 +79,7 @@ def train_model(args):
     # Set experiment (create if doesn't exist)
     mlflow.set_experiment(args.experiment_name)
     print(f"✓ Experiment: {args.experiment_name}")
+    print(f"✓ Tracking URI: {mlflow.get_tracking_uri()}")
     
     
     # ========================================
@@ -81,7 +88,7 @@ def train_model(args):
     with mlflow.start_run() as run:
         
         print(f"\n✓ MLflow Run ID: {run.info.run_id}")
-        print(f"✓ Run URL: {mlflow.get_tracking_uri()}/#/experiments/{run.info.experiment_id}/runs/{run.info.run_id}")
+        print(f"✓ Experiment ID: {run.info.experiment_id}")
         
         
         # ========================================
@@ -113,13 +120,14 @@ def train_model(args):
         X_train, X_test, y_train, y_test = data_loader.load_data()
         print(f"✓ Loaded data: {len(X_train)} train, {len(X_test)} test samples")
         
-        # Log dataset to MLflow
-        data_loader.log_to_mlflow()
+        # Log dataset to MLflow (with warning suppression)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            data_loader.log_to_mlflow()
         
         # Log data parameters
         mlflow.log_param("data.test_size", args.test_size)
         mlflow.log_param("data.random_state", args.random_state)
-        
         
         # ========================================
         # 6. TRAIN MODEL
@@ -186,14 +194,18 @@ def train_model(args):
         from mlflow.models import infer_signature
         signature = infer_signature(X_train, y_pred_train)
         
-        # Log model with signature
-        mlflow.sklearn.log_model(
-            model,
-            artifact_path="model",
-            signature=signature,
-            registered_model_name=args.model_name
-        )
+        # Log model with signature (suppress warnings)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            model_info = mlflow.sklearn.log_model(
+                model,
+                artifact_path="model",
+                signature=signature,
+                registered_model_name=args.model_name
+            )
+        
         print(f"✓ Model logged and registered as '{args.model_name}'")
+        print(f"✓ Model URI: {model_info.model_uri}")
         
         
         # ========================================
@@ -220,10 +232,11 @@ def train_model(args):
         mlflow.log_artifact(manifest_path)
         
         print("✓ Reproducibility manifest saved")
-        print("\nMANIFEST CONTENTS:")
-        for key, value in manifest.items():
-            print(f"  {key:30s}: {value}")
-        
+        print(f"\nMANIFEST SUMMARY:")
+        print(f"  Run ID: {manifest['mlflow_run_id']}")
+        print(f"  Git Commit: {manifest['git.commit_sha'][:8]}")
+        print(f"  Dataset Version: {manifest['dataset.version']}")
+        print(f"  Test Accuracy: {manifest['test_accuracy']:.4f}")
         
         # ========================================
         # 10. PRINT REPRODUCIBILITY INSTRUCTIONS
@@ -237,21 +250,25 @@ To reproduce this exact run:
 1. Checkout the git commit:
    git checkout {git_metadata['git.commit_sha']}
 
-2. Activate the conda environment:
+2. Load environment variables:
+   source setup_env.sh
+
+3. Activate the conda environment:
    conda activate iris-mlops
 
-3. Re-run training with the same parameters:
+4. Re-run training with the same parameters:
    python -m src.train \\
        --n-estimators {args.n_estimators} \\
        --max-depth {args.max_depth} \\
        --random-state {args.random_state} \\
        --test-size {args.test_size}
 
-4. Compare runs in MLflow UI:
-   mlflow ui
+5. View run in MLflow UI:
+   mlflow ui --port 5002
+   Open: http://localhost:5002
    
-   Then navigate to:
-   {mlflow.get_tracking_uri()}/#/experiments/{run.info.experiment_id}/runs/{run.info.run_id}
+   Or view in remote server:
+   Open: {mlflow.get_tracking_uri()}
 """)
         
         print("█"*60 + "\n")
@@ -267,15 +284,33 @@ def main():
     print("IRIS CLASSIFIER - REPRODUCIBLE ML TRAINING")
     print("="*60)
     
-    run_id = train_model(args)
+    print("\n✓ Environment configuration verified")
+    print(f"✓ MLflow Tracking URI: {os.getenv('MLFLOW_TRACKING_URI')}")
+    print(f"✓ S3 Endpoint: {os.getenv('MLFLOW_S3_ENDPOINT_URL')}")
     
-    print("\n" + "="*60)
-    print(f"✓ TRAINING COMPLETE - Run ID: {run_id}")
-    print("="*60)
-    print("\nView results in MLflow UI:")
-    print("  mlflow ui")
-    print("  Open: http://localhost:5000\n")
-
+    try:
+        run_id = train_model(args)
+        
+        print("\n" + "="*60)
+        print(f"✓ TRAINING COMPLETE - Run ID: {run_id}")
+        print("="*60)
+        print("\nView results:")
+        print(f"  Remote MLflow UI: {os.getenv('MLFLOW_TRACKING_URI')}")
+        print(f"  Or local: mlflow ui --port 5002\n")
+        
+    except Exception as e:
+        print("\n" + "="*60)
+        print("❌ TRAINING FAILED")
+        print("="*60)
+        print(f"\nError: {str(e)}")
+        print("\nTroubleshooting:")
+        print("1. Ensure Docker services are running: docker-compose ps")
+        print("2. Check environment variables: source setup_env.sh")
+        print("3. Test MLflow connection: curl http://localhost:5001/health")
+        print("4. Test MinIO connection: curl http://localhost:9000/minio/health/live")
+        print("="*60 + "\n")
+        raise
 
 if __name__ == "__main__":
+    mlflow.set_tracking_uri("http://127.0.0.1:5001")
     main()
