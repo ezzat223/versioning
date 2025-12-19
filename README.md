@@ -1,300 +1,510 @@
-# versioning
+# Iris Classifier MLOps: Complete Reproducibility with Git + MLflow
+
+A **reference implementation** demonstrating end-to-end reproducibility of code, data, and models using only **Git** and **MLflow**.
 
 ---
 
-## Access Your Services
+## 🎯 What This Project Demonstrates
 
-- lakeFS UI: http://localhost:8000
-- MLflow UI: http://localhost:5001
-- MinIO Console: http://localhost:9001
+1. **Full Reproducibility**: Any model can be traced back to exact code + data + hyperparameters
+2. **Git as Source of Truth**: All code and data definitions versioned in Git
+3. **MLflow for Tracking**: Experiments, datasets, models, and metadata tracked in MLflow
+4. **Complete Traceability**: Every MLflow run links to a specific Git commit
 
 ---
-
-# MLOps Stack: Complete Versioning Solution
-
-A production-ready MLOps implementation that provides full versioning for **code** (Git), **data** (lakeFS), and **models** (MLflow) with complete reproducibility.
-
-## 🎯 Key Features
-
-- **Data Versioning**: Git-like operations for data using lakeFS (branch, commit, merge, revert)
-- **Model Tracking**: Full experiment tracking with MLflow including datasets, parameters, metrics, and models
-- **Code Versioning**: Standard Git integration for code management
-- **Reproducibility**: Every training run tracks exact versions of code, data, and parameters
-- **Collaboration**: Multiple users can work on isolated data branches simultaneously
-- **Production Ready**: Model registry with staging/production lifecycle management
 
 ## 🏗️ Architecture
-
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     MLOps Stack                              │
-├─────────────────────────────────────────────────────────────┤
+│                         GIT REPOSITORY                       │
+│  (Source of Truth for Code + Data Definitions)              │
 │                                                              │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐              │
-│  │   Git    │    │  lakeFS  │    │  MLflow  │              │
-│  │  (Code)  │───▶│  (Data)  │───▶│ (Models) │              │
-│  └──────────┘    └──────────┘    └──────────┘              │
+│  • Source code (train.py, data_loader.py, utils.py)        │
+│  • Data file (data/iris.csv)                                │
+│  • Environment (environment.yml)                            │
+│  • Commit SHA = Unique version identifier                   │
+└─────────────────────────────────────────────────────────────┘
+                               │
+                               │ Git metadata extracted
+                               │ at runtime
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      TRAINING EXECUTION                      │
+│  (src/train.py)                                             │
 │                                                              │
-│  Versioned:       Versioned:      Versioned:                │
-│  - Python code    - Datasets      - Parameters              │
-│  - ML scripts     - Features      - Metrics                 │
-│  - Configs        - Artifacts     - Models                  │
-│                                    - Datasets (linked)       │
+│  1. Extract Git metadata (commit SHA, branch, etc.)         │
+│  2. Load dataset and compute hash                           │
+│  3. Train model with specified hyperparameters              │
+│  4. Evaluate metrics                                        │
+│  5. Log everything to MLflow                                │
+└─────────────────────────────────────────────────────────────┘
+                               │
+                               │ All metadata + artifacts
+                               │ logged to MLflow
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                         MLFLOW                               │
+│  (Tracking & Registry for Experiments + Models)             │
 │                                                              │
+│  RUN METADATA:                                              │
+│    • git.commit_sha                                         │
+│    • git.branch                                             │
+│    • git.repo_name                                          │
+│    • dataset.name, dataset.version, dataset.hash           │
+│    • hyperparameters (n_estimators, max_depth, etc.)       │
+│    • metrics (accuracy, precision, recall, f1)             │
+│                                                              │
+│  ARTIFACTS:                                                  │
+│    • Trained model (model/)                                 │
+│    • Reproducibility manifest (CSV)                         │
+│                                                              │
+│  DATASETS (MLflow Datasets API):                            │
+│    • iris-dataset with source + schema                      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## 📋 Components
-
-- **PostgreSQL**: Metadata storage for lakeFS and MLflow
-- **MinIO**: S3-compatible object storage for data and model artifacts
-- **lakeFS**: Data versioning with Git-like semantics
-- **MLflow**: ML experiment tracking, model registry, and projects
+---
 
 ## 🚀 Quick Start
 
-### 1. Prerequisites
-
+### 1. Setup Environment
 ```bash
-# Install Docker and Docker Compose
-# Install Python 3.11+
+# Clone repository (or initialize new one)
+git clone <your-repo-url>
+cd iris-classifier-mlops
 
-# Install Python dependencies
-pip install -r requirements.txt
+# Create conda environment
+conda env create -f environment.yml
+conda activate iris-mlops
 ```
 
-### 2. Start Services
-
-```bash
-# Make setup script executable
-chmod +x setup.sh
-
-# Run setup (starts all services and creates repository)
-./setup.sh
-```
-
-### 3. Set Environment Variables
-
-```bash
-export LAKEFS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
-export LAKEFS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-export LAKEFS_ENDPOINT=http://localhost:8000
-export MLFLOW_TRACKING_URI=http://localhost:5000
-export AWS_ACCESS_KEY_ID=minioadmin
-export AWS_SECRET_ACCESS_KEY=minioadmin123
-export MLFLOW_S3_ENDPOINT_URL=http://localhost:9000
-```
-
-### 4. Initialize Git
-
+### 2. Initialize Git (if new project)
 ```bash
 git init
 git add .
-git commit -m "Initial commit"
+git commit -m "Initial commit: Iris classifier with Git + MLflow reproducibility"
 ```
 
-### 5. Run First Pipeline
-
+### 3. Run Training
 ```bash
-# Preprocess data and upload to lakeFS
-python preprocess.py --lakefs_branch main
+# Run with default parameters
+python -m src.train
 
-# Train model
-python train.py --lakefs_branch main --max_depth 5 --n_estimators 100
+# Run with custom hyperparameters
+python -m src.train \
+    --n-estimators 200 \
+    --max-depth 10 \
+    --random-state 42
 ```
 
-## 🌐 Access UIs
-
-- **lakeFS**: http://localhost:8000
-  - Username: admin
-  - Access Key: AKIAIOSFODNN7EXAMPLE
-  - Secret Key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-
-- **MLflow**: http://localhost:5000
-
-- **MinIO Console**: http://localhost:9001
-  - Username: minioadmin
-  - Password: minioadmin123
-
-## 📚 Usage Examples
-
-### Create Data Branch for Experiments
-
+### 4. View Results in MLflow UI
 ```bash
-# Create branch
-curl -X POST "http://localhost:8000/api/v1/repositories/ml-repo/branches" \
-  -u "AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "experiment-1", "source": "main"}'
-
-# Upload data to branch
-python preprocess.py --lakefs_branch experiment-1
-
-# Train on branch
-python train.py --lakefs_branch experiment-1 --max_depth 10
+mlflow ui
+# Open http://localhost:5000 in browser
 ```
 
-### Run as MLflow Project
+---
 
+## 🔄 How Reproducibility Works
+
+### The Reproducibility Chain
+```
+Git Commit SHA → Exact Code + Data → MLflow Run → Trained Model
+     (1)              (2)                (3)           (4)
+
+1. Git commit SHA uniquely identifies code version
+2. Code defines data loading and transformation logic
+3. MLflow run captures execution with all metadata
+4. Model is artifact of that specific run
+```
+
+### Key Components
+
+#### 1. **Git Metadata Extraction** (`src/utils.py`)
+```python
+git_metadata = get_git_metadata()
+# Returns:
+# {
+#     "git.commit_sha": "a3b4c5d...",
+#     "git.branch": "main",
+#     "git.repo_name": "iris-classifier-mlops",
+#     "git.is_dirty": "False"
+# }
+```
+
+#### 2. **Dataset Versioning** (`src/data_loader.py`)
+
+- Uses **MLflow Datasets API** to track dataset
+- Computes **MD5 hash** of data file for versioning
+- Logs dataset with name, source, and version to MLflow
+```python
+dataset = mlflow.data.from_pandas(df, source="data/iris.csv", name="iris-dataset")
+mlflow.log_input(dataset, context="training")
+```
+
+#### 3. **Complete Run Tagging** (`src/train.py`)
+
+Every MLflow run includes:
+- Git commit SHA, branch, repo name
+- Dataset name, version (hash), path
+- All hyperparameters
+- All metrics
+- Reproducibility manifest (CSV artifact)
+
+---
+
+## 📊 Testing Reproducibility
+
+### Test 1: Same Commit → Same Results
 ```bash
-mlflow run . \
-  -P lakefs_branch=main \
-  -P max_depth=8 \
-  -P n_estimators=120 \
-  --env-manager=local
+# Run training
+python -m src.train --n-estimators 100 --max-depth 5
+# Note the run ID and metrics
+
+# Run again with same parameters
+python -m src.train --n-estimators 100 --max-depth 5
+# Results should be identical (same random_state)
 ```
 
-### Merge Successful Experiments
-
+### Test 2: Different Parameters → Different Results
 ```bash
-curl -X POST "http://localhost:8000/api/v1/repositories/ml-repo/refs/ml-repo/branches/experiment-1/merge/main" \
-  -u "AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Merge successful experiment"}'
+# Run with different hyperparameters
+python -m src.train --n-estimators 200 --max-depth 10
+# Compare runs in MLflow UI
 ```
 
-## 🔍 What Gets Versioned?
-
-### Code (Git)
-- Training scripts
-- Preprocessing logic
-- Model definitions
-- Configuration files
-
-### Data (lakeFS)
-- Raw datasets
-- Processed features
-- Training/validation splits
-- Data artifacts
-
-### Models (MLflow)
-- Model binaries
-- Parameters
-- Metrics
-- Training metadata
-- Dataset lineage (links to lakeFS commits)
-
-## 🎓 Complete Testing Guide
-
-See [TESTING_GUIDE.md](TESTING_GUIDE.md) for comprehensive testing scenarios including:
-
-1. Basic pipeline with data versioning
-2. Data branching and experimentation
-3. Model reproducibility
-4. Merge data changes
-5. MLflow Projects
-6. Model registry and deployment
-7. Disaster recovery (time travel)
-8. Multi-user collaboration
-
-## 📁 Project Structure
-
-```
-.
-├── docker-compose.yml      # Service definitions
-├── setup.sh               # Automated setup script
-├── MLproject              # MLflow project definition
-├── conda.yaml            # Environment specification
-├── requirements.txt      # Python dependencies
-├── preprocess.py         # Data preprocessing script
-├── train.py             # Model training script
-├── README.md            # This file
-└── TESTING_GUIDE.md     # Detailed testing scenarios
-```
-
-## 🔄 Typical Workflow
-
-```
-1. Create data branch
-   ↓
-2. Modify/improve data
-   ↓
-3. Commit to lakeFS
-   ↓
-4. Train model (logs to MLflow)
-   ↓
-5. Compare with other experiments
-   ↓
-6. Merge successful data changes
-   ↓
-7. Register best model
-   ↓
-8. Promote to production
-```
-
-## 🛠️ Troubleshooting
-
-### Services not starting
-
+### Test 3: Modify Code → New Commit → Trackable Change
 ```bash
-# Check Docker
-docker-compose ps
+# Modify src/train.py (e.g., change default n_estimators)
+git add src/train.py
+git commit -m "Increase default n_estimators to 150"
 
-# View logs
-docker-compose logs lakefs
-docker-compose logs mlflow
+# Run training
+python -m src.train
 
-# Restart
-docker-compose restart
+# In MLflow UI, you'll see new git.commit_sha
+# You can now compare this run to previous runs
 ```
 
-### lakeFS connection issues
-
+### Test 4: Reproduce Old Run from Git History
 ```bash
-# Verify environment variables
-env | grep LAKEFS
+# View MLflow UI and find an old run
+# Note its git.commit_sha (e.g., a3b4c5d)
 
-# Test connection
-curl http://localhost:8000/_health
+# Checkout that commit
+git checkout a3b4c5d
+
+# Re-run with same parameters (from run metadata)
+python -m src.train --n-estimators 100 --max-depth 5
+
+# Results should match the original run exactly
 ```
 
-### MLflow tracking issues
-
+### Test 5: Modify Dataset → Detect Change
 ```bash
-# Verify tracking URI
-echo $MLFLOW_TRACKING_URI
+# Modify data/iris.csv (e.g., remove last 10 rows)
+git add data/iris.csv
+git commit -m "Reduce dataset size for testing"
 
-# Test connection
-curl http://localhost:5000/health
+# Run training
+python -m src.train
+
+# In MLflow UI, you'll see:
+#   - Different git.commit_sha
+#   - Different dataset.version (hash changed)
+#   - Different dataset.rows
+#   - Different metrics (due to smaller dataset)
 ```
 
-## 🧹 Cleanup
+---
 
-```bash
-# Stop services
-docker-compose down
+## 🔍 Inspecting a Run in MLflow UI
 
-# Remove all data (WARNING: destructive)
-docker-compose down -v
+For any run, you can see:
+
+### Parameters
+- `n_estimators`, `max_depth`, `random_state`
+- `data.test_size`, `data.random_state`
+
+### Metrics
+- `train_accuracy`, `test_accuracy`
+- `test_precision`, `test_recall`, `test_f1`
+
+### Tags
+- `git.commit_sha` ← **Use this to checkout exact code**
+- `git.branch`
+- `git.repo_name`
+- `dataset.name`
+- `dataset.version` ← **Hash of dataset**
+- `dataset.hash` ← **Full MD5 hash**
+- `dataset.path`
+
+### Datasets
+- Click "Datasets" tab to see `iris-dataset`
+- View schema, source, and profile
+
+### Artifacts
+- `model/` - Trained model (can be loaded with `mlflow.sklearn.load_model()`)
+- `reproducibility_manifest.csv` - Complete snapshot of run metadata
+
+---
+
+## 🎓 How Git and MLflow Complement Each Other
+
+| Aspect | Git | MLflow |
+|--------|-----|--------|
+| **Code Versioning** | ✅ Source of truth | Records commit SHA |
+| **Data Definition** | ✅ Stores data file or generation script | Tracks dataset hash + metadata |
+| **Hyperparameters** | ❌ Not tracked | ✅ Logged as parameters |
+| **Metrics** | ❌ Not tracked | ✅ Logged as metrics |
+| **Models** | ❌ Binary files not practical | ✅ Model registry + artifacts |
+| **Experiment Comparison** | ❌ Difficult | ✅ Built-in UI for comparison |
+| **Reproducibility** | ✅ Enables exact code recreation | ✅ Enables exact run recreation |
+
+**Together they provide**: Code + Data + Parameters + Metrics + Models = **Complete Reproducibility**
+
+---
+
+## 📁 Project Structure Explained
+
+iris-classifier-mlops/
+│
+├── README.md                    # This file
+├── environment.yml              # Conda environment specification
+├── .gitignore                   # Git ignore rules
+│
+├── data/
+│   └── iris.csv                # Dataset (versioned in Git)
+│
+├── src/
+│   ├── init.py
+│   ├── utils.py                # Git metadata extraction
+│   ├── data_loader.py          # Dataset loading + MLflow logging
+│   └── train.py                # Main training script
+│
+└── notebooks/
+└── explore_runs.ipynb      # (Optional) Jupyter notebook for analysis
+
+---
+
+## 🛠️ Extending This Project
+
+### Adding CI/CD Later
+
+This project is designed to be **CI/CD-ready**. To add automation:
+
+1. **GitHub Actions / GitLab CI**:
+   - Trigger on push to main
+   - Run `python -m src.train`
+   - Upload MLflow artifacts to remote tracking server
+
+2. **Remote MLflow Tracking**:
+export MLFLOW_TRACKING_URI=https://your-mlflow-server.com
+   python -m src.train
 ```
 
-## 📈 Next Steps
+### Adding More Models
 
-After mastering the basics:
+1. Create `src/train_model_b.py`
+2. Use same Git + MLflow pattern
+3. All runs are comparable in MLflow UI
 
-1. **Add CI/CD**: Automate testing and deployment with GitHub Actions
-2. **Add DVC**: Local data caching for faster development
-3. **Add Data Quality**: Implement Great Expectations for data validation
-4. **Add Model Monitoring**: Track model performance in production
-5. **Scale Up**: Deploy to Kubernetes for production use
-6. **Add Security**: Implement proper authentication and authorization
+### Adding More Datasets
 
-## 🤝 Contributing
+1. Add new dataset in `data/`
+2. Create new data loader class
+3. Use `mlflow.log_input()` to track it
 
-This is a reference implementation. Adapt it to your needs:
+---
 
-- Replace iris dataset with your own data
-- Modify model architecture
-- Add custom preprocessing
-- Integrate with your existing tools
+## ✅ Best Practices Demonstrated
+
+1. **Always commit before training** (or use `--strict-git` flag)
+2. **One experiment per repository** (keeps things organized)
+3. **Programmatic Git metadata extraction** (no manual tagging)
+4. **Dataset hashing for versioning** (detects data changes)
+5. **Complete run manifests** (single artifact contains all metadata)
+6. **Clear reproducibility instructions** (generated automatically)
+
+---
+
+## 🐛 Troubleshooting
+
+### "Not a git repository" warning
+- Initialize git: `git init && git add . && git commit -m "Initial commit"`
+
+### MLflow UI not showing datasets
+- Ensure you're using MLflow 2.9.2+
+- Check that `mlflow.log_input()` was called
+
+### Different results on re-run
+- Check `random_state` parameter
+- Verify dataset hasn't changed (check `dataset.hash` tag)
+- Ensure same commit (`git.commit_sha`)
+
+---
+
+## 📚 Further Reading
+
+- [MLflow Datasets Documentation](https://mlflow.org/docs/latest/ml/dataset/)
+- [MLflow Tracking Documentation](https://mlflow.org/docs/latest/tracking.html)
+- [Git Best Practices](https://git-scm.com/book/en/v2)
+
+---
 
 ## 📄 License
 
-This is an educational example for demonstrating MLOps best practices.
+MIT License - feel free to use this as a template for your ML projects.
 
-## 🙋 Support
+---
 
-For issues with:
-- **lakeFS**: https://docs.lakefs.io
-- **MLflow**: https://mlflow.org/docs
-- **This implementation**: Create an issue or refer to TESTING_GUIDE.md
+## 🙋 Questions?
+
+This project demonstrates **minimal but correct** reproducibility.
+It's designed to be:
+- Easy to understand
+- Easy to run locally
+- Easy to extend with CI/CD or orchestration tools later
+
+**Key takeaway**: Git + MLflow provide complete reproducibility without additional complexity.
+```
+
+---
+
+## 🧪 Step-by-Step Testing Guide
+
+### Initial Setup
+```bash
+# 1. Create project directory
+mkdir iris-classifier-mlops
+cd iris-classifier-mlops
+
+# 2. Create all files (copy code from above)
+# ... create all files ...
+
+# 3. Initialize Git
+git init
+git add .
+git commit -m "Initial commit: Complete reproducibility system"
+
+# 4. Create conda environment
+conda env create -f environment.yml
+conda activate iris-mlops
+```
+
+### Test Scenario 1: First Training Run
+```bash
+# Run training with default parameters
+python -m src.train
+
+# Expected output:
+# - Git metadata printed
+# - Dataset loaded and logged
+# - Model trained
+# - Metrics displayed
+# - Reproducibility instructions printed
+
+# Start MLflow UI
+mlflow ui
+
+# In browser (http://localhost:5000):
+# - Navigate to "iris-classifier-mlops" experiment
+# - Click on the run
+# - Verify all tags are present (git.commit_sha, dataset.version, etc.)
+# - Check "Datasets" tab shows iris-dataset
+# - Download "reproducibility_manifest.csv" artifact
+```
+
+### Test Scenario 2: Compare Different Hyperparameters
+```bash
+# Run 1: Shallow forest
+python -m src.train --n-estimators 50 --max-depth 3
+
+# Run 2: Deep forest
+python -m src.train --n-estimators 200 --max-depth 10
+
+# In MLflow UI:
+# - Select both runs
+# - Click "Compare"
+# - See parameter differences
+# - See metric differences
+# - Verify both have same git.commit_sha (same code)
+```
+
+### Test Scenario 3: Code Modification Tracking
+```bash
+# Modify code (e.g., change default n_estimators in train.py)
+# Edit src/train.py: change default from 100 to 150
+
+# Commit change
+git add src/train.py
+git commit -m "Change default n_estimators to 150"
+
+# Run training
+python -m src.train
+
+# In MLflow UI:
+# - Find this run
+# - Compare git.commit_sha with previous runs
+# - They will be different
+# - Click commit SHA to see it in full
+```
+
+### Test Scenario 4: Full Reproducibility Test
+```bash
+# In MLflow UI, find your first run and note:
+# - git.commit_sha (e.g., abc123...)
+# - parameters used
+
+# Checkout that exact commit
+git checkout abc123
+
+# Re-run with same parameters
+python -m src.train --n-estimators 100 --max-depth 5
+
+# In MLflow UI:
+# - Compare this new run with original
+# - Metrics should be identical
+# - git.commit_sha should match
+# - dataset.version should match
+```
+
+### Test Scenario 5: Dataset Change Detection
+```bash
+# Return to latest commit
+git checkout main
+
+# Modify dataset (add noise or remove rows)
+python -c "import pandas as pd; df = pd.read_csv('data/iris.csv'); df = df.sample(frac=0.8); df.to_csv('data/iris.csv', index=False)"
+
+# Commit change
+git add data/iris.csv
+git commit -m "Reduce dataset to 80% of original"
+
+# Run training
+python -m src.train
+
+# In MLflow UI:
+# - Compare with previous runs
+# - dataset.version will be different (hash changed)
+# - dataset.rows will be different
+# - Metrics will likely be different
+```
+
+---
+
+## 🎯 Key Learning Points
+
+This implementation demonstrates:
+
+1. **Git extracts code version** → Every run knows exact code used
+2. **MLflow Datasets tracks data version** → Every run knows exact data used
+3. **MLflow logs everything** → Complete audit trail
+4. **Reproducibility is guaranteed** → Checkout commit + re-run = same result
+
+**No CI/CD needed** - This works locally and forms a solid foundation for automation later.
+
+**No DVC needed** - Dataset versioning via hashing + MLflow Datasets API.
+
+**No complexity** - Just Git + MLflow + clear patterns.
+
