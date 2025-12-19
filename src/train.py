@@ -23,7 +23,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train Iris classifier with full reproducibility")
     
     # Model hyperparameters
-    parser.add_argument("--n-estimators", type=int, default=100, 
+    parser.add_argument("--n-estimators", type=int, default=150, 
                         help="Number of trees in random forest")
     parser.add_argument("--max-depth", type=int, default=5, 
                         help="Maximum depth of trees")
