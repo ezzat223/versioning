@@ -234,3 +234,4 @@ venv/
 .DS_Store
 Thumbs.db
 reproducibility_manifest.csv
+data/
