@@ -16,7 +16,6 @@ from src.data_loader import IrisDataLoader
 # Suppress specific MLflow warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='mlflow.data.dataset_source_registry')
 warnings.filterwarnings('ignore', category=UserWarning, module='mlflow.types.utils')
-warnings.filterwarnings('ignore', message='.*artifact_path.*deprecated.*')
 
 
 def parse_args():
@@ -199,7 +198,7 @@ def train_model(args):
             warnings.simplefilter("ignore")
             model_info = mlflow.sklearn.log_model(
                 model,
-                artifact_path="model",
+                name="model",
                 signature=signature,
                 registered_model_name=args.model_name
             )
@@ -250,22 +249,19 @@ To reproduce this exact run:
 1. Checkout the git commit:
    git checkout {git_metadata['git.commit_sha']}
 
-2. Load environment variables:
-   source setup_env.sh
-
-3. Activate the conda environment:
+2. Activate the conda environment:
    conda activate iris-mlops
 
-4. Re-run training with the same parameters:
+3. Re-run training with the same parameters:
    python -m src.train \\
        --n-estimators {args.n_estimators} \\
        --max-depth {args.max_depth} \\
        --random-state {args.random_state} \\
        --test-size {args.test_size}
 
-5. View run in MLflow UI:
-   mlflow ui --port 5002
-   Open: http://localhost:5002
+4. View run in MLflow UI:
+   mlflow ui --port 5001
+   Open: http://localhost:5001
    
    Or view in remote server:
    Open: {mlflow.get_tracking_uri()}
@@ -284,10 +280,6 @@ def main():
     print("IRIS CLASSIFIER - REPRODUCIBLE ML TRAINING")
     print("="*60)
     
-    print("\n✓ Environment configuration verified")
-    print(f"✓ MLflow Tracking URI: {os.getenv('MLFLOW_TRACKING_URI')}")
-    print(f"✓ S3 Endpoint: {os.getenv('MLFLOW_S3_ENDPOINT_URL')}")
-    
     try:
         run_id = train_model(args)
         
@@ -296,7 +288,7 @@ def main():
         print("="*60)
         print("\nView results:")
         print(f"  Remote MLflow UI: {os.getenv('MLFLOW_TRACKING_URI')}")
-        print(f"  Or local: mlflow ui --port 5002\n")
+        print("  Or local: mlflow ui --port 5001\n")
         
     except Exception as e:
         print("\n" + "="*60)
