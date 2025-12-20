@@ -1,0 +1,27 @@
+stages:
+  train:
+    cmd: >
+      mlflow run . 
+      -P n_estimators=${n_estimators}
+      -P max_depth=${max_depth}
+      -P data_path=${data_path}
+      -P test_size=${test_size}
+      -P random_state=${random_state}
+    deps:
+      - src/train.py
+      - src/data_loader.py
+      - src/utils.py
+      - ${data_path}
+    params:
+      - n_estimators
+      - max_depth
+      - min_samples_split
+      - min_samples_leaf
+      - test_size
+      - validation_size
+      - random_state
+    outs:
+      - models/model.pkl
+    metrics:
+      - metrics.json:
+          cache: false

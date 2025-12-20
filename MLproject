@@ -1,0 +1,77 @@
+name: ml-reproducible-template
+
+python_env: python_env.yaml
+
+entry_points:
+  main:
+    parameters:
+      # Model selection
+      model_type: {type: str, default: "random_forest"}
+      
+      # Supervised hyperparameters (RandomForest)
+      n_estimators: {type: int, default: 150}
+      max_depth: {type: int, default: 5}
+      min_samples_split: {type: int, default: 2}
+      min_samples_leaf: {type: int, default: 1}
+      
+      # Unsupervised hyperparameters (KMeans)
+      n_clusters: {type: int, default: 3}
+      max_iter: {type: int, default: 300}
+      n_init: {type: int, default: 10}
+      
+      # Data parameters
+      data_path: {type: str, default: "data/dataset.csv"}
+      target_column: {type: str, default: "target"}
+      test_size: {type: float, default: 0.2}
+      validation_size: {type: float, default: 0.0}
+      
+      # Training parameters
+      random_state: {type: int, default: 42}
+      experiment_name: {type: str, default: "ml-experiment"}
+      model_name: {type: str, default: "ml-model"}
+      
+      # Reproducibility
+      strict_git: {type: str, default: "false"}
+      
+    command: "python -m src.train \
+              --model-type {model_type} \
+              --n-estimators {n_estimators} \
+              --max-depth {max_depth} \
+              --min-samples-split {min_samples_split} \
+              --min-samples-leaf {min_samples_leaf} \
+              --n-clusters {n_clusters} \
+              --max-iter {max_iter} \
+              --n-init {n_init} \
+              --data-path {data_path} \
+              --target-column {target_column} \
+              --test-size {test_size} \
+              --validation-size {validation_size} \
+              --random-state {random_state} \
+              --experiment-name {experiment_name} \
+              --model-name {model_name} \
+              --strict-git {strict_git}"
+  
+  supervised:
+    parameters:
+      n_estimators: {type: int, default: 150}
+      max_depth: {type: int, default: 5}
+      data_path: {type: str, default: "data/dataset.csv"}
+      target_column: {type: str, default: "target"}
+      
+    command: "python -m src.train \
+              --model-type random_forest \
+              --n-estimators {n_estimators} \
+              --max-depth {max_depth} \
+              --data-path {data_path} \
+              --target-column {target_column}"
+  
+  unsupervised:
+    parameters:
+      n_clusters: {type: int, default: 3}
+      data_path: {type: str, default: "data/dataset.csv"}
+      
+    command: "python -m src.train \
+              --model-type kmeans \
+              --n-clusters {n_clusters} \
+              --data-path {data_path} \
+              --target-column None"

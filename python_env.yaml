@@ -1,0 +1,22 @@
+# MLflow Python environment specification
+python: "3.11"
+build_dependencies:
+  - pip
+  - setuptools
+  - wheel
+dependencies:
+  - scikit-learn
+  - mlflow
+  - pandas
+  - numpy
+  - gitpython
+  - boto3
+  - psycopg2-binary
+  - dvc
+  - dvc-s3
+  - pyyaml
+  - matplotlib
+  - seaborn
+  - pytest
+  - black
+  - flake8

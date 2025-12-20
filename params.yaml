@@ -1,0 +1,16 @@
+# DVC Parameters - Tracked by Git
+# Changes here trigger pipeline re-runs via `dvc repro`
+
+# Model hyperparameters
+n_estimators: 150
+max_depth: 5
+min_samples_split: 2
+min_samples_leaf: 1
+
+# Data configuration
+data_path: data/dataset.csv
+test_size: 0.2
+validation_size: 0.0
+
+# Reproducibility
+random_state: 42

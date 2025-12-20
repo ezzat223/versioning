@@ -3,13 +3,60 @@ channels:
   - conda-forge
   - defaults
 dependencies:
+  # Python
   - python=3.11
   - pip
+  
+  # System-level optimizations (optional, uncomment if needed)
+  # - mkl  # Intel Math Kernel Library for faster numpy/scipy
+  # - cudatoolkit=11.8  # For GPU support (NVIDIA)
+  
+  # Core scientific packages (conda versions for better compatibility)
+  - numpy
+  - pandas
+  - scikit-learn
+
+  # Visualization (for local analysis)
+  - matplotlib
+  - seaborn
+  
+  # Jupyter for interactive development
+  - jupyter
+  - ipython
+  - ipykernel
+
   - pip:
+      # MLOps tools
       - mlflow
-      - scikit-learn
-      - pandas
-      - numpy
+      - dvc
+      - dvc-s3
+      # - dvc-gs  # Uncomment for Google Cloud Storage
+      # - dvc-azure  # Uncomment for Azure Blob Storage
+      
+      # Git integration
       - gitpython
-      - boto3
+      
+      # Configuration management
+      - pyyaml
+
+      # Additional ML libraries (uncomment as needed)
+      # - xgboost>=2.0.0
+      # - lightgbm>=4.0.0
+      # - catboost>=1.2
+      # - tensorflow>=2.13.0
+      # - torch>=2.0.0
+
+      # Clustering (for unsupervised learning)
+      - scipy
+      
+      # Development tools
+      - pytest
+      - black
+      - flake8
+      - mypy
+
+      # Optional: Cloud storage
+      - boto3  # AWS S3
       - psycopg2-binary
+      # - google-cloud-storage>=2.10.0  # GCS
+      # - azure-storage-blob>=12.17.0  # Azure

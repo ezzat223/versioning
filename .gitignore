@@ -236,3 +236,130 @@ Thumbs.db
 reproducibility_manifest.csv
 data/
 BRAINSTORMING.md
+config.yaml
+
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Local artifacts
+reproducibility_manifest.csv
+*.pkl
+*.joblib
+
+# DVC - Track .dvc files but NOT the actual data
+/data/iris.csv
+/data/*.csv
+/data/*.parquet
+.dvc/cache
+.dvc/tmp
+.dvc_storage/
+
+# Config - NOT tracked (by design for experimentation)
+config.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+*.log
+logs/
+
+# DVC
+/data/iris.csv
+.dvc_storage/
+
+# Config (not tracked - can change without commits)
+config.yaml
+
+# MLflow artifacts
+mlruns/
+reproducibility_manifest.csv
+MYNOTES.md
+
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+*.pyc
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# DVC - Track .dvc files but NOT actual data
+/data/dataset.csv
+/data/*.csv
+/data/*.parquet
+/data/*.pkl
+.dvc/cache/
+.dvc/tmp/
+.dvc_storage/
+
+# Models and outputs
+/models/
+/metrics.json
+*.pkl
+*.joblib
+
+# MLflow
+/mlruns/
+/mlartifacts/
+docs/
