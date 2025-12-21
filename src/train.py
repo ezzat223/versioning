@@ -17,6 +17,15 @@ warnings.filterwarnings('ignore')
 
 mlflow.set_tracking_uri("http://127.0.0.1:5001")
 
+mlflow.autolog(
+    log_input_examples=True,
+    log_model_signatures=True,
+    log_models=True,
+    disable=False,
+    exclusive=False,  # Allow manual logging too
+    silent=True
+)
+
 ## Autolog configuration
 # mlflow.sklearn.autolog(
 #     log_input_examples=True,
@@ -25,11 +34,11 @@ mlflow.set_tracking_uri("http://127.0.0.1:5001")
 #     max_tuning_runs=5
 # )
 
-mlflow.xgboost.autolog(
-    log_input_examples=True,
-    log_model_signatures=True,
-    log_models=True
-)
+# mlflow.xgboost.autolog(
+#     log_input_examples=True,
+#     log_model_signatures=True,
+#     log_models=True
+# )
 
 def parse_args():
     """Parse command line arguments (configured in MLproject)."""
