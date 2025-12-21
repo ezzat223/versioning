@@ -21,8 +21,8 @@ supervised:
 # MLFLOW CONFIGURATION
 # =============================================================================
 mlflow:
-  experiment_name: "iris-classification"
-  model_name: "iris-classifier"
+  experiment_name: "iris-classification-4"
+  model_name: "iris-classifier-4"
   tracking_uri: "http://localhost:5001"
 
 
