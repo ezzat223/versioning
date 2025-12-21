@@ -7,15 +7,15 @@ dependencies:
   - python=3.11
   - pip
   
-  # System-level optimizations (optional, uncomment if needed)
-  # - mkl  # Intel Math Kernel Library for faster numpy/scipy
-  # - cudatoolkit=11.8  # For GPU support (NVIDIA)
+  # System-level optimizations
+  - mkl  # Intel Math Kernel Library for faster numpy/scipy
+  # - cudatoolkit=11.8  # For GPU support (NVIDIA) - uncomment if you have NVIDIA GPU
   
   # Core scientific packages (conda versions for better compatibility)
   - numpy
   - pandas
   - scikit-learn
-
+  
   # Visualization (for local analysis)
   - matplotlib
   - seaborn
@@ -24,7 +24,10 @@ dependencies:
   - jupyter
   - ipython
   - ipykernel
-
+  
+  # Virtual environment support for MLflow
+  - virtualenv
+  
   - pip:
       # MLOps tools
       - mlflow
@@ -38,14 +41,14 @@ dependencies:
       
       # Configuration management
       - pyyaml
-
+      
       # Additional ML libraries (uncomment as needed)
       # - xgboost>=2.0.0
       # - lightgbm>=4.0.0
       # - catboost>=1.2
       # - tensorflow>=2.13.0
-      # - torch>=2.0.0
-
+      # - torch>=2.0.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118  # For CUDA 11.8
+      
       # Clustering (for unsupervised learning)
       - scipy
       
@@ -54,7 +57,7 @@ dependencies:
       - black
       - flake8
       - mypy
-
+      
       # Optional: Cloud storage
       - boto3  # AWS S3
       - psycopg2-binary
