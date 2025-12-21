@@ -363,3 +363,4 @@ ENV/
 /mlruns/
 /mlartifacts/
 docs/
+docker-compose.yaml
