@@ -16,7 +16,8 @@ import pandas as pd
 
 from sklearn.ensemble import RandomForestClassifier
 
-from src.utils import get_git_metadata, validate_git_state
+from utils import get_git_metadata, validate_git_state
+from data_loaders import TabularDataLoader
 
 warnings.filterwarnings('ignore')
 
@@ -37,8 +38,8 @@ def parse_args():
     parser = argparse.ArgumentParser()
     
     # Data parameters
-    parser.add_argument("--data-path", type=str, required=True, default="data/processed/iris.csv")
-    parser.add_argument("--target-column", type=str, required=True, default="target")
+    parser.add_argument("--data-path", type=str, default="data/processed/iris.csv")
+    parser.add_argument("--target-column", type=str, default="target")
     parser.add_argument("--test-size", type=float, default=0.2)
     parser.add_argument("--validation-size", type=float, default=0.1)
     parser.add_argument("--random-state", type=int, default=42)
@@ -62,7 +63,6 @@ def load_data(args):
     Returns:
         X_train, X_test, y_train, y_test, X_val, y_val, loader
     """
-    from src.data_loaders import TabularDataLoader
     
     loader = TabularDataLoader(
         data_path=args.data_path,

@@ -12,7 +12,7 @@ stages:
       -P experiment_name=${mlflow.experiment_name}
       -P model_name=${mlflow.model_name}
     deps:
-      - train.py
+      - src/train.py
       - src/data_loaders/
       - src/utils.py
       - ${data.path}
