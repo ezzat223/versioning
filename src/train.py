@@ -3,7 +3,9 @@ import json
 import warnings
 
 import mlflow
-import mlflow.sklearn
+# import mlflow.sklearn
+import mlflow.xgboost
+
 
 import pandas as pd
 import xgboost as xgb
@@ -17,13 +19,18 @@ warnings.filterwarnings('ignore')
 mlflow.set_tracking_uri("http://127.0.0.1:5001")
 
 ## Autolog configuration
-mlflow.sklearn.autolog(
+# mlflow.sklearn.autolog(
+#     log_input_examples=True,
+#     log_model_signatures=True,
+#     log_models=True,
+#     max_tuning_runs=5
+# )
+
+mlflow.xgboost.autolog(
     log_input_examples=True,
     log_model_signatures=True,
-    log_models=True,
-    max_tuning_runs=5
+    log_models=True
 )
-
 
 def parse_args():
     """Parse command line arguments (configured in MLproject)."""
