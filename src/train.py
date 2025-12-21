@@ -6,7 +6,6 @@ import mlflow
 # import mlflow.sklearn
 import mlflow.xgboost
 
-
 import pandas as pd
 import xgboost as xgb
 from sklearn.metrics import accuracy_score
@@ -83,10 +82,14 @@ def train_model(X_train, y_train, args):
     Train your model.
     """
     model = xgb.XGBClassifier(
-        n_estimators=args.n_estimators,  # TODO: Get from args.n_estimators
-        max_depth=args.max_depth,      # TODO: Get from args.max_depth
-        random_state=args.random_state
+        n_estimators=args.n_estimators,
+        max_depth=args.max_depth,
+        random_state=args.random_state,
+        eval_metric="logloss"
     )
+    
+    # 🔧 Critical fix
+    model._estimator_type = "classifier"
     
     print("Training model...")
     model.fit(X_train, y_train)
