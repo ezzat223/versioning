@@ -78,7 +78,8 @@ class DatabaseDataLoader(BaseDataLoader):
         validation_size: float = 0.0,
         random_state: int = 42,
         cache_data: bool = True,
-        cache_path: str = ".cache/database_cache.parquet"
+        cache_path: str = ".cache/database_cache.parquet",
+        auto_log_mlflow: bool = True
     ):
         """
         Initialize database data loader.
@@ -94,6 +95,7 @@ class DatabaseDataLoader(BaseDataLoader):
             random_state: Random seed
             cache_data: Cache data locally for reproducibility
             cache_path: Path to cache file
+            auto_log_mlflow: Automatically log datasets to MLflow on load_and_split
         """
         # Initialize without data_path (will be set from cache)
         self.client = client
@@ -102,6 +104,7 @@ class DatabaseDataLoader(BaseDataLoader):
         self.database_type = database_type
         self.cache_data = cache_data
         self.cache_path = Path(cache_path)
+        self.auto_log_mlflow = auto_log_mlflow
         
         # Validate inputs
         if table_name is None and query is None:
@@ -222,13 +225,19 @@ class DatabaseDataLoader(BaseDataLoader):
     
     def load_and_split(self) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[pd.Series], 
                                       Optional[pd.Series], Optional[pd.DataFrame], Optional[pd.Series]]:
-        """Load and split database data."""
+        """Load and split database data with automatic MLflow logging."""
         df = self._load_data()
         
         if self.is_supervised:
-            return self._split_supervised(df)
+            result = self._split_supervised(df)
         else:
-            return self._split_unsupervised(df)
+            result = self._split_unsupervised(df)
+        
+        # Automatic MLflow logging
+        if self.auto_log_mlflow:
+            self._log_splits_to_mlflow(result)
+        
+        return result
     
     def _split_supervised(self, df: pd.DataFrame) -> Tuple:
         """Split for supervised learning."""
@@ -274,53 +283,98 @@ class DatabaseDataLoader(BaseDataLoader):
         
         return X_train, X_test, None, None, X_val, None
     
+    def _log_splits_to_mlflow(self, splits: Tuple) -> None:
+        """
+        Log train/test/validation splits to MLflow as separate datasets.
+        
+        Args:
+            splits: Tuple of (X_train, X_test, y_train, y_test, X_val, y_val)
+        """
+        try:
+            X_train, X_test, y_train, y_test, X_val, y_val = splits
+            
+            # Create source string
+            if self.query:
+                source = f"{self.database_type}://custom_query_{self._compute_query_hash()}"
+            else:
+                source = f"{self.database_type}://{self.table_name}"
+            
+            dataset_name = self.table_name or f"query_{self._compute_query_hash()[:8]}"
+            
+            # Log training dataset
+            if self.is_supervised:
+                train_df = X_train.copy()
+                train_df[self.target_column] = y_train.values
+                train_dataset = mlflow.data.from_pandas(
+                    train_df,
+                    source=source,
+                    targets=self.target_column,
+                    name=f"{dataset_name}-train"
+                )
+            else:
+                train_dataset = mlflow.data.from_pandas(
+                    X_train,
+                    source=source,
+                    name=f"{dataset_name}-train"
+                )
+            
+            mlflow.log_input(train_dataset, context="training")
+            
+            # Log test dataset
+            if self.is_supervised:
+                test_df = X_test.copy()
+                test_df[self.target_column] = y_test.values
+                test_dataset = mlflow.data.from_pandas(
+                    test_df,
+                    source=source,
+                    targets=self.target_column,
+                    name=f"{dataset_name}-test"
+                )
+            else:
+                test_dataset = mlflow.data.from_pandas(
+                    X_test,
+                    source=source,
+                    name=f"{dataset_name}-test"
+                )
+            
+            mlflow.log_input(test_dataset, context="testing")
+            
+            # Log validation dataset if exists
+            if X_val is not None:
+                if self.is_supervised:
+                    val_df = X_val.copy()
+                    val_df[self.target_column] = y_val.values
+                    val_dataset = mlflow.data.from_pandas(
+                        val_df,
+                        source=source,
+                        targets=self.target_column,
+                        name=f"{dataset_name}-validation"
+                    )
+                else:
+                    val_dataset = mlflow.data.from_pandas(
+                        X_val,
+                        source=source,
+                        name=f"{dataset_name}-validation"
+                    )
+                
+                mlflow.log_input(val_dataset, context="validation")
+                print(f"✓ Logged train, validation, and test datasets to MLflow")
+            else:
+                print(f"✓ Logged train and test datasets to MLflow")
+            
+            # Log dataset metadata
+            info = self.get_data_info()
+            for key, value in info.items():
+                mlflow.set_tag(key, str(value))
+                
+        except Exception as e:
+            print(f"⚠️  MLflow logging failed: {e}")
+            print("   Continuing without MLflow logging...")
+    
     def _compute_query_hash(self) -> str:
         """Compute hash of query/table for versioning."""
         query_str = self.query if self.query else f"SELECT * FROM {self.table_name}"
         return hashlib.sha256(query_str.encode()).hexdigest()[:16]
-    
-    def log_to_mlflow(self, context: str = "training") -> mlflow.data.dataset.Dataset:
-        """
-        Log database dataset to MLflow with proper source information.
-        
-        Args:
-            context: Context for the dataset
-        
-        Returns:
-            MLflow Dataset object
-        """
-        df = self._load_data()
-        
-        # Create source string
-        if self.query:
-            source = f"{self.database_type}://custom_query_{self._compute_query_hash()}"
-        else:
-            source = f"{self.database_type}://{self.table_name}"
-        
-        # Create MLflow dataset
-        dataset = mlflow.data.from_pandas(
-            df,
-            source=source,
-            targets=self.target_column,
-            name=f"{self.database_type}_{self.table_name or 'query'}"
-        )
-        
-        # Log to MLflow
-        mlflow.log_input(dataset, context=context)
-        
-        # Log metadata
-        mlflow.set_tag("data.loader_type", "database")
-        mlflow.set_tag("data.database_type", self.database_type)
-        mlflow.set_tag("data.source_type", f"database_{self.database_type}")
-        
-        if self.table_name:
-            mlflow.set_tag("data.table_name", self.table_name)
-        
-        if self.cache_data:
-            mlflow.set_tag("data.cached", "true")
-            mlflow.set_tag("data.cache_path", str(self.cache_path))
-        
-        return dataset
     
     def get_data_info(self) -> Dict[str, Any]:
         """Get dataset metadata."""

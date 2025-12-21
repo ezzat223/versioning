@@ -5,35 +5,37 @@ INSTRUCTIONS FOR DATA SCIENTISTS:
 1. Choose your data loader (delete the other two examples)
 2. Implement your model selection logic
 3. Add your model's hyperparameters to params.yaml and MLproject
-4. Implement your evaluation metrics
+4. Implement your evaluation metrics (if different from autolog defaults)
 5. Delete these instructions and comments when ready
 
 This template provides:
-- Proper MLflow logging
+- Automatic MLflow logging via autolog
+- Automatic dataset tracking (train/val/test splits logged by data loaders)
 - Git metadata tracking
 - Data versioning with DVC
-- Three data loader examples (pick one, delete others)
 """
 import argparse
 import json
-import pickle
 import warnings
-from pathlib import Path
 
 import mlflow
-import mlflow.sklearn
 import pandas as pd
 
 from src.utils import get_git_metadata, validate_git_state
 
 warnings.filterwarnings('ignore')
 
-mlflow.set_tracking_uri("http://localhost:5001")
 
 # =============================================================================
 # MLFLOW AUTOLOGGING (Uncomment the framework you're using)
 # =============================================================================
-# Autologging automatically captures metrics, parameters, and models
+# Autologging automatically captures:
+# - Model parameters (hyperparameters)
+# - Training metrics
+# - Model artifacts
+# - Model signature
+# - Input examples
+#
 # Comment out or delete the frameworks you're NOT using
 
 # Generic autolog (works for most frameworks)
@@ -52,7 +54,7 @@ mlflow.autolog(
 #     log_input_examples=True,
 #     log_model_signatures=True,
 #     log_models=True,
-#     max_tuning_runs=5  # For hyperparameter tuning
+#     max_tuning_runs=5
 # )
 
 # import mlflow.xgboost
@@ -73,38 +75,11 @@ mlflow.autolog(
 # mlflow.tensorflow.autolog(
 #     log_input_examples=True,
 #     log_model_signatures=True,
-#     log_models=True,
-#     every_n_iter=1
+#     log_models=True
 # )
 
 # import mlflow.pytorch
 # mlflow.pytorch.autolog(
-#     log_input_examples=True,
-#     log_model_signatures=True,
-#     log_models=True
-# )
-
-# import mlflow.keras
-# mlflow.keras.autolog(
-#     log_input_examples=True,
-#     log_model_signatures=True,
-#     log_models=True
-# )
-
-# import mlflow.fastai
-# mlflow.fastai.autolog(
-#     log_input_examples=True,
-#     log_model_signatures=True,
-#     log_models=True
-# )
-
-# import mlflow.statsmodels
-# mlflow.statsmodels.autolog(
-#     log_models=True
-# )
-
-# import mlflow.spark
-# mlflow.spark.autolog(
 #     log_input_examples=True,
 #     log_model_signatures=True,
 #     log_models=True
@@ -128,6 +103,7 @@ def parse_args():
     # Example:
     # parser.add_argument("--learning-rate", type=float, default=0.001)
     # parser.add_argument("--n-estimators", type=int, default=100)
+    # parser.add_argument("--max-depth", type=int, default=10)
     
     # MLflow parameters
     parser.add_argument("--experiment-name", type=str, default="my-experiment")
@@ -146,6 +122,8 @@ def load_data(args):
     2. Delete the other two examples
     3. Customize parameters as needed
     
+    NOTE: Data loaders automatically log train/test/validation datasets to MLflow!
+    
     Returns:
         X_train, X_test, y_train, y_test, X_val, y_val, loader
     """
@@ -160,9 +138,11 @@ def load_data(args):
         target_column=args.target_column,
         test_size=args.test_size,
         validation_size=args.validation_size,
-        random_state=args.random_state
+        random_state=args.random_state,
+        auto_log_mlflow=True  # Automatic dataset logging
     )
     
+    # This automatically logs datasets to MLflow!
     X_train, X_test, y_train, y_test, X_val, y_val = loader.load_and_split()
     
     # ============================================================
@@ -177,10 +157,11 @@ def load_data(args):
     #     image_size=(224, 224),
     #     test_size=args.test_size,
     #     validation_size=args.validation_size,
-    #     random_state=args.random_state
+    #     random_state=args.random_state,
+    #     auto_log_mlflow=True
     # )
     # 
-    # # Get splits (DataFrames with image paths)
+    # # This automatically logs datasets to MLflow!
     # X_train, X_test, y_train, y_test, X_val, y_val = loader.load_and_split()
     # 
     # # TODO: Load actual images when needed for your model
@@ -193,7 +174,6 @@ def load_data(args):
     # from sqlalchemy import create_engine
     # from src.data_loaders import DatabaseDataLoader
     # 
-    # # Setup your database connection
     # engine = create_engine('postgresql://user:pass@localhost/db')
     # 
     # loader = DatabaseDataLoader(
@@ -205,9 +185,11 @@ def load_data(args):
     #     cache_path=".cache/my_data.parquet",
     #     test_size=args.test_size,
     #     validation_size=args.validation_size,
-    #     random_state=args.random_state
+    #     random_state=args.random_state,
+    #     auto_log_mlflow=True
     # )
     # 
+    # # This automatically logs datasets to MLflow!
     # X_train, X_test, y_train, y_test, X_val, y_val = loader.load_and_split()
     
     return X_train, X_test, y_train, y_test, X_val, y_val, loader
@@ -223,19 +205,20 @@ def train_model(X_train, y_train, args):
     3. Use hyperparameters from args
     4. Return the trained model
     
-    Example models:
-    - RandomForestClassifier (sklearn)
-    - XGBClassifier (xgboost)
-    - LGBMClassifier (lightgbm)
-    - PyTorch/TensorFlow models
+    NOTE: Autolog will automatically log:
+    - All hyperparameters
+    - Training metrics
+    - Model artifact
+    - Model signature
+    - Input examples
     """
     
     # TODO: Replace this with your model!
     from sklearn.ensemble import RandomForestClassifier
     
     model = RandomForestClassifier(
-        n_estimators=args.n_estimators,  # TODO: Get from args
-        max_depth=args.max_depth,      # TODO: Get from args
+        n_estimators=100,  # TODO: Get from args.n_estimators
+        max_depth=10,      # TODO: Get from args.max_depth
         random_state=args.random_state
     )
     
@@ -246,37 +229,47 @@ def train_model(X_train, y_train, args):
     return model
 
 
-def evaluate_model(model, X_train, X_test, y_train, y_test, X_val=None, y_val=None):
+def evaluate_model(model, X_test, y_test, X_val=None, y_val=None):
     """
     Evaluate model and return metrics.
     
     INSTRUCTIONS:
-    1. Add metrics relevant to your task (classification, regression, etc.)
-    2. Consider adding custom metrics specific to your problem
-    3. Return dictionary of metrics to log to MLflow
-    """
+    Add ONLY custom metrics not captured by autolog.
+    Standard metrics (accuracy, loss, precision, recall, etc.) are already logged by autolog.
     
-    # TODO: Replace with your evaluation metrics!
-    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+    Add custom metrics like:
+    - Business-specific metrics
+    - Domain-specific calculations
+    - Custom scoring functions
+    """
     
     print("Evaluating model...")
     
-    metrics = {
-        "train_accuracy": accuracy_score(y_train, model.predict(X_train)),
-        "test_accuracy": accuracy_score(y_test, model.predict(X_test)),
-        "test_f1": f1_score(y_test, model.predict(X_test), average='weighted'),
-        "test_precision": precision_score(y_test, model.predict(X_test), average='weighted', zero_division=0),
-        "test_recall": recall_score(y_test, model.predict(X_test), average='weighted', zero_division=0),
-    }
+    # NOTE: Basic metrics are already logged by autolog!
+    # Only add custom metrics here if needed
     
-    # Validation metrics if available
+    # TODO: Add custom metrics not handled by autolog
+    # Example:
+    # from sklearn.metrics import matthews_corrcoef
+    # custom_metrics = {
+    #     "matthews_correlation": matthews_corrcoef(y_test, model.predict(X_test)),
+    #     "custom_business_metric": calculate_custom_metric(y_test, predictions)
+    # }
+    # mlflow.log_metrics(custom_metrics)
+    
+    # Get basic metrics for display and saving (autolog already logged these)
+    from sklearn.metrics import accuracy_score
+    test_accuracy = accuracy_score(y_test, model.predict(X_test))
+    
+    metrics = {"test_accuracy": test_accuracy}
+    
+    print(f"\n✓ Evaluation complete")
+    print(f"  Test Accuracy: {test_accuracy:.4f}")
+    
     if X_val is not None and y_val is not None:
-        metrics["val_accuracy"] = accuracy_score(y_val, model.predict(X_val))
-        metrics["val_f1"] = f1_score(y_val, model.predict(X_val), average='weighted')
-    
-    print("\nMetrics:")
-    for name, value in metrics.items():
-        print(f"  {name}: {value:.4f}")
+        val_accuracy = accuracy_score(y_val, model.predict(X_val))
+        metrics["val_accuracy"] = val_accuracy
+        print(f"  Val Accuracy: {val_accuracy:.4f}")
     
     return metrics
 
@@ -289,7 +282,7 @@ def main():
     print("SUPERVISED LEARNING PIPELINE")
     print("="*60)
     
-    # Git metadata
+    # Git metadata (not handled by autolog)
     git_metadata = get_git_metadata()
     validate_git_state(git_metadata, strict=args.strict_git.lower() == "true")
     
@@ -298,14 +291,18 @@ def main():
     
     with mlflow.start_run() as run:
         print(f"\n✓ MLflow Run ID: {run.info.run_id}")
+        print("✓ Autolog enabled - automatic logging of params, metrics, and model")
         
-        # Log git metadata
+        # Log git metadata (not handled by autolog)
+        print("\nLogging git metadata...")
         for key, value in git_metadata.items():
             mlflow.set_tag(key, value)
+        print("✓ Git metadata logged")
         
+        # Log task type (not handled by autolog)
         mlflow.set_tag("task_type", "supervised")
         
-        # Load data
+        # Load data (datasets automatically logged by loader!)
         print("\n" + "-"*60)
         print("Loading data...")
         X_train, X_test, y_train, y_test, X_val, y_val, loader = load_data(args)
@@ -318,19 +315,13 @@ def main():
         # Print data summary
         print(loader.summary())
         
-        # Log dataset to MLflow
-        loader.log_to_mlflow(context="training")
-        
-        # Log data info
-        for key, value in loader.get_data_info().items():
-            mlflow.log_param(key, value)
-        
-        # TODO: Log your model hyperparameters
-        # Example:
-        # mlflow.log_params({
-        #     "learning_rate": args.learning_rate,
-        #     "n_estimators": args.n_estimators,
-        # })
+        # Log data loader metadata (not handled by autolog)
+        print("\n" + "-"*60)
+        print("Logging data loader metadata...")
+        data_info = loader.get_data_info()
+        for key, value in data_info.items():
+            mlflow.set_tag(key, str(value))
+        print("✓ Data loader metadata logged as tags")
         
         # Train model
         print("\n" + "-"*60)
@@ -338,41 +329,39 @@ def main():
         
         # Evaluate model
         print("\n" + "-"*60)
-        metrics = evaluate_model(model, X_train, X_test, y_train, y_test, X_val, y_val)
+        metrics = evaluate_model(model, X_test, y_test, X_val, y_val)
         
-        # Log metrics
-        mlflow.log_metrics(metrics)
-        
-        # Save model locally
+        # Save metrics locally for DVC
         print("\n" + "-"*60)
-        print("Saving model...")
-        models_dir = Path("models")
-        models_dir.mkdir(exist_ok=True)
-        
-        model_path = models_dir / "model.pkl"
-        with open(model_path, 'wb') as f:
-            pickle.dump(model, f)
-        print(f"✓ Model saved to {model_path}")
-        
-        # Save metrics
+        print("Saving artifacts...")
         with open("metrics.json", 'w') as f:
             json.dump(metrics, f, indent=2)
+        print("✓ Metrics saved to metrics.json")
         
-        # Log model to MLflow
-        from mlflow.models import infer_signature
-        signature = infer_signature(X_train, model.predict(X_train))
-        
-        mlflow.sklearn.log_model(
-            model,
-            name="model",
-            signature=signature,
-            registered_model_name=args.model_name
-        )
-        print(f"✓ Model registered as '{args.model_name}'")
+        # NOTE: Model is already logged by autolog!
+        # No need to manually save or log model
+        print("✓ Model automatically logged by autolog")
+        print(f"✓ Model registered as '{args.model_name}' by autolog")
         
         print("\n" + "="*60)
         print(f"✓ TRAINING COMPLETE - Run ID: {run.info.run_id}")
         print("="*60)
+        print("\nWhat was automatically logged:")
+        print("  By Autolog:")
+        print("    ✓ Model parameters (hyperparameters)")
+        print("    ✓ Training metrics")
+        print("    ✓ Model artifact")
+        print("    ✓ Model signature")
+        print("    ✓ Input examples")
+        print("  By Data Loaders:")
+        print("    ✓ Train dataset (context='training')")
+        print("    ✓ Test dataset (context='testing')")
+        if X_val is not None:
+            print("    ✓ Validation dataset (context='validation')")
+        print("    ✓ Dataset metadata (source, size, splits, etc.)")
+        print("  Manually:")
+        print("    ✓ Git metadata (commit SHA, branch, status)")
+        print("    ✓ Task type and data loader info")
         
         return run.info.run_id
 

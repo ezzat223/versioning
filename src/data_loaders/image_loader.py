@@ -73,7 +73,8 @@ class ImageDataLoader(BaseDataLoader):
         random_state: int = 42,
         image_size: Tuple[int, int] = (224, 224),
         transform: Optional[Callable] = None,
-        valid_extensions: Tuple[str, ...] = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
+        valid_extensions: Tuple[str, ...] = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff'),
+        auto_log_mlflow: bool = True
     ):
         """
         Initialize image data loader.
@@ -89,6 +90,7 @@ class ImageDataLoader(BaseDataLoader):
             image_size: Target image size (height, width)
             transform: Optional transform function for images
             valid_extensions: Valid image file extensions
+            auto_log_mlflow: Automatically log datasets to MLflow on load_and_split
         """
         super().__init__(
             data_path=data_path,
@@ -103,6 +105,7 @@ class ImageDataLoader(BaseDataLoader):
         self.image_size = image_size
         self.transform = transform
         self.valid_extensions = valid_extensions
+        self.auto_log_mlflow = auto_log_mlflow
         
         # Build image manifest
         self.manifest = self._build_manifest()
@@ -194,7 +197,7 @@ class ImageDataLoader(BaseDataLoader):
     def load_and_split(self) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[pd.Series], 
                                       Optional[pd.Series], Optional[pd.DataFrame], Optional[pd.Series]]:
         """
-        Load and split image dataset.
+        Load and split image dataset with automatic MLflow logging.
         
         Returns:
             For supervised: (X_train, X_test, y_train, y_test, X_val, y_val)
@@ -202,9 +205,15 @@ class ImageDataLoader(BaseDataLoader):
             For unsupervised: (X_train, X_test, None, None, X_val, None)
         """
         if self.is_supervised:
-            return self._split_supervised(self.manifest)
+            result = self._split_supervised(self.manifest)
         else:
-            return self._split_unsupervised(self.manifest)
+            result = self._split_unsupervised(self.manifest)
+        
+        # Automatic MLflow logging
+        if self.auto_log_mlflow:
+            self._log_splits_to_mlflow(result)
+        
+        return result
     
     def _split_supervised(self, df: pd.DataFrame) -> Tuple:
         """Split for supervised learning."""
@@ -247,6 +256,115 @@ class ImageDataLoader(BaseDataLoader):
         
         return X_train, X_test, None, None, X_val, None
     
+    def _log_splits_to_mlflow(self, splits: Tuple) -> None:
+        """
+        Log train/test/validation splits to MLflow as separate datasets.
+        Also logs sample images and dataset metadata.
+        
+        Args:
+            splits: Tuple of (X_train, X_test, y_train, y_test, X_val, y_val)
+        """
+        try:
+            X_train, X_test, y_train, y_test, X_val, y_val = splits
+            
+            source_path = str(self.data_path.absolute())
+            dataset_name = self.data_path.stem
+            
+            # Log training dataset
+            if self.is_supervised:
+                train_df = X_train.copy()
+                train_df['label'] = y_train.values
+                train_dataset = mlflow.data.from_pandas(
+                    train_df,
+                    source=source_path,
+                    targets='label',
+                    name=f"{dataset_name}-train"
+                )
+            else:
+                train_dataset = mlflow.data.from_pandas(
+                    X_train,
+                    source=source_path,
+                    name=f"{dataset_name}-train"
+                )
+            
+            mlflow.log_input(train_dataset, context="training")
+            
+            # Log test dataset
+            if self.is_supervised:
+                test_df = X_test.copy()
+                test_df['label'] = y_test.values
+                test_dataset = mlflow.data.from_pandas(
+                    test_df,
+                    source=source_path,
+                    targets='label',
+                    name=f"{dataset_name}-test"
+                )
+            else:
+                test_dataset = mlflow.data.from_pandas(
+                    X_test,
+                    source=source_path,
+                    name=f"{dataset_name}-test"
+                )
+            
+            mlflow.log_input(test_dataset, context="testing")
+            
+            # Log validation dataset if exists
+            if X_val is not None:
+                if self.is_supervised:
+                    val_df = X_val.copy()
+                    val_df['label'] = y_val.values
+                    val_dataset = mlflow.data.from_pandas(
+                        val_df,
+                        source=source_path,
+                        targets='label',
+                        name=f"{dataset_name}-validation"
+                    )
+                else:
+                    val_dataset = mlflow.data.from_pandas(
+                        X_val,
+                        source=source_path,
+                        name=f"{dataset_name}-validation"
+                    )
+                
+                mlflow.log_input(val_dataset, context="validation")
+                print(f"✓ Logged train, validation, and test datasets to MLflow")
+            else:
+                print(f"✓ Logged train and test datasets to MLflow")
+            
+            # Log dataset metadata
+            info = self.get_data_info()
+            for key, value in info.items():
+                mlflow.set_tag(key, str(value))
+            
+            # Log sample images from training set
+            self._log_sample_images(X_train, y_train if self.is_supervised else None)
+                
+        except Exception as e:
+            print(f"⚠️  MLflow logging failed: {e}")
+            print("   Continuing without MLflow logging...")
+    
+    def _log_sample_images(self, X_sample: pd.DataFrame, y_sample: Optional[pd.Series] = None, 
+                          num_samples: int = 5) -> None:
+        """Log sample images to MLflow."""
+        try:
+            sample_df = X_sample.head(num_samples)
+            
+            for idx, (_, row) in enumerate(sample_df.iterrows()):
+                try:
+                    img = Image.open(row['image_path']).convert('RGB')
+                    
+                    if self.is_supervised and y_sample is not None:
+                        label = y_sample.iloc[idx]
+                        mlflow.log_image(img, f"sample_images/{label}_image_{idx}.png")
+                    else:
+                        mlflow.log_image(img, f"sample_images/image_{idx}.png")
+                        
+                except Exception as e:
+                    print(f"⚠️  Could not log sample image {idx}: {e}")
+                    
+        except Exception as e:
+            print(f"⚠️  Could not log sample images: {e}")
+    
     def load_images(self, image_paths: pd.DataFrame, as_array: bool = True) -> np.ndarray:
         """
         Load images from DataFrame of paths.
@@ -284,49 +402,6 @@ class ImageDataLoader(BaseDataLoader):
         if as_array:
             return np.stack(images)
         return images
-    
-    def log_to_mlflow(self, context: str = "training") -> mlflow.data.dataset.Dataset:
-        """
-        Log image dataset to MLflow with proper source information.
-        
-        Args:
-            context: Context for the dataset
-        
-        Returns:
-            MLflow Dataset object
-        """
-        # Create dataset from manifest
-        dataset = mlflow.data.from_pandas(
-            self.manifest,
-            source=str(self.data_path),
-            targets="label" if self.is_supervised else None,
-            name=f"images_{self.data_path.stem}"
-        )
-        
-        # Log to MLflow
-        mlflow.log_input(dataset, context=context)
-        
-        # Log metadata
-        mlflow.set_tag("data.loader_type", "image")
-        mlflow.set_tag("data.structure_type", self.structure_type)
-        mlflow.set_tag("data.image_size", f"{self.image_size[0]}x{self.image_size[1]}")
-        mlflow.set_tag("data.num_images", len(self.manifest))
-        mlflow.set_tag("data.source_type", f"image_{self.structure_type}")
-        
-        if self.is_supervised:
-            mlflow.set_tag("data.num_classes", self.manifest['label'].nunique())
-            mlflow.set_tag("data.classes", str(sorted(self.manifest['label'].unique().tolist())))
-        
-        # Log sample images
-        sample_images = self.manifest.head(5)
-        for idx, row in sample_images.iterrows():
-            try:
-                img = Image.open(row['image_path'])
-                mlflow.log_image(img, f"sample_images/image_{idx}.png")
-            except Exception as e:
-                print(f"⚠️  Could not log sample image: {e}")
-        
-        return dataset
     
     def get_data_info(self) -> dict:
         """Get dataset metadata."""

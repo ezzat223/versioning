@@ -32,7 +32,8 @@ class TabularDataLoader(BaseDataLoader):
         test_size: float = 0.2,
         validation_size: float = 0.0,
         random_state: int = 42,
-        file_format: Optional[str] = None
+        file_format: Optional[str] = None,
+        auto_log_mlflow: bool = True
     ):
         """
         Initialize tabular data loader.
@@ -44,6 +45,7 @@ class TabularDataLoader(BaseDataLoader):
             validation_size: Validation set fraction
             random_state: Random seed
             file_format: Force format ('csv', 'parquet', 'excel'). Auto-detect if None.
+            auto_log_mlflow: Automatically log datasets to MLflow on load_and_split
         """
         super().__init__(
             data_path=data_path,
@@ -54,6 +56,7 @@ class TabularDataLoader(BaseDataLoader):
         )
         
         self.file_format = file_format or self._detect_format()
+        self.auto_log_mlflow = auto_log_mlflow
     
     def _detect_format(self) -> str:
         """Detect file format from extension."""
@@ -89,13 +92,19 @@ class TabularDataLoader(BaseDataLoader):
     
     def load_and_split(self) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[pd.Series], 
                                       Optional[pd.Series], Optional[pd.DataFrame], Optional[pd.Series]]:
-        """Load and split tabular data."""
+        """Load and split tabular data with automatic MLflow logging."""
         df = self._load_data()
         
         if self.is_supervised:
-            return self._split_supervised(df)
+            result = self._split_supervised(df)
         else:
-            return self._split_unsupervised(df)
+            result = self._split_unsupervised(df)
+        
+        # Automatic MLflow logging
+        if self.auto_log_mlflow:
+            self._log_splits_to_mlflow(result)
+        
+        return result
     
     def _split_supervised(self, df: pd.DataFrame) -> Tuple:
         """Split for supervised learning."""
@@ -141,35 +150,88 @@ class TabularDataLoader(BaseDataLoader):
         
         return X_train, X_test, None, None, X_val, None
     
-    def log_to_mlflow(self, context: str = "training") -> mlflow.data.dataset.Dataset:
+    def _log_splits_to_mlflow(self, splits: Tuple) -> None:
         """
-        Log tabular dataset to MLflow with proper source information.
+        Log train/test/validation splits to MLflow as separate datasets.
         
         Args:
-            context: Context for the dataset (e.g., 'training', 'validation')
-        
-        Returns:
-            MLflow Dataset object
+            splits: Tuple of (X_train, X_test, y_train, y_test, X_val, y_val)
         """
-        df = self._load_data()
-        
-        # Create MLflow dataset with proper source
-        dataset = mlflow.data.from_pandas(
-            df,
-            source=str(self.data_path.absolute()),
-            targets=self.target_column,
-            name=self.data_path.stem  # Use filename as dataset name
-        )
-        
-        # Log to current MLflow run
-        mlflow.log_input(dataset, context=context)
-        
-        # Log additional metadata
-        mlflow.set_tag("data.loader_type", "tabular")
-        mlflow.set_tag("data.file_format", self.file_format)
-        mlflow.set_tag("data.source_type", "local_file")
-        
-        return dataset
+        try:
+            X_train, X_test, y_train, y_test, X_val, y_val = splits
+            
+            source_path = str(self.data_path.absolute())
+            dataset_name = self.data_path.stem
+            
+            # Log training dataset
+            if self.is_supervised:
+                train_df = X_train.copy()
+                train_df[self.target_column] = y_train.values
+                train_dataset = mlflow.data.from_pandas(
+                    train_df,
+                    source=source_path,
+                    targets=self.target_column,
+                    name=f"{dataset_name}-train"
+                )
+            else:
+                train_dataset = mlflow.data.from_pandas(
+                    X_train,
+                    source=source_path,
+                    name=f"{dataset_name}-train"
+                )
+            
+            mlflow.log_input(train_dataset, context="training")
+            
+            # Log test dataset
+            if self.is_supervised:
+                test_df = X_test.copy()
+                test_df[self.target_column] = y_test.values
+                test_dataset = mlflow.data.from_pandas(
+                    test_df,
+                    source=source_path,
+                    targets=self.target_column,
+                    name=f"{dataset_name}-test"
+                )
+            else:
+                test_dataset = mlflow.data.from_pandas(
+                    X_test,
+                    source=source_path,
+                    name=f"{dataset_name}-test"
+                )
+            
+            mlflow.log_input(test_dataset, context="testing")
+            
+            # Log validation dataset if exists
+            if X_val is not None:
+                if self.is_supervised:
+                    val_df = X_val.copy()
+                    val_df[self.target_column] = y_val.values
+                    val_dataset = mlflow.data.from_pandas(
+                        val_df,
+                        source=source_path,
+                        targets=self.target_column,
+                        name=f"{dataset_name}-validation"
+                    )
+                else:
+                    val_dataset = mlflow.data.from_pandas(
+                        X_val,
+                        source=source_path,
+                        name=f"{dataset_name}-validation"
+                    )
+                
+                mlflow.log_input(val_dataset, context="validation")
+                print(f"✓ Logged train, validation, and test datasets to MLflow")
+            else:
+                print(f"✓ Logged train and test datasets to MLflow")
+            
+            # Log dataset metadata
+            info = self.get_data_info()
+            for key, value in info.items():
+                mlflow.set_tag(key, str(value))
+                
+        except Exception as e:
+            print(f"⚠️  MLflow logging failed: {e}")
+            print("   Continuing without MLflow logging...")
     
     def get_data_info(self) -> dict:
         """Get dataset metadata."""

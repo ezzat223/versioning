@@ -4,7 +4,8 @@ Utility functions for Git metadata extraction and MLflow tagging.
 from pathlib import Path
 from typing import Dict, Optional
 import git
-
+import mlflow
+import pandas as pd
 
 def get_git_metadata(repo_path: Optional[str] = None) -> Dict[str, str]:
     """
@@ -87,7 +88,6 @@ def validate_git_state(metadata: Dict[str, str], strict: bool = False) -> bool:
         return False
     
     return True
-
 
 def print_git_info(metadata: Dict[str, str]) -> None:
     """Pretty print git metadata."""
