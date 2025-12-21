@@ -22,7 +22,7 @@ from pathlib import Path
 import mlflow
 import pandas as pd
 
-from src.utils import get_git_metadata, validate_git_state
+from utils import get_git_metadata, validate_git_state
 
 warnings.filterwarnings('ignore')
 
@@ -91,7 +91,7 @@ def load_data(args):
     # ============================================================
     # OPTION 1: TABULAR DATA
     # ============================================================
-    from src.data_loaders import TabularDataLoader
+    from data_loaders import TabularDataLoader
     
     loader = TabularDataLoader(
         data_path=args.data_path,
@@ -108,7 +108,7 @@ def load_data(args):
     # ============================================================
     # OPTION 2: IMAGE DATA
     # ============================================================
-    # from src.data_loaders import ImageDataLoader
+    # from data_loaders import ImageDataLoader
     # 
     # loader = ImageDataLoader(
     #     data_path=args.data_path,
@@ -132,7 +132,7 @@ def load_data(args):
     # OPTION 3: DATABASE
     # ============================================================
     # from sqlalchemy import create_engine
-    # from src.data_loaders import DatabaseDataLoader
+    # from data_loaders import DatabaseDataLoader
     # 
     # engine = create_engine('postgresql://user:pass@localhost/db')
     # 

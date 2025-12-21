@@ -9,8 +9,8 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 
-from src.data_loaders import TabularDataLoader
-from src.utils import get_git_metadata, validate_git_state
+from data_loaders import TabularDataLoader
+from utils import get_git_metadata, validate_git_state
 
 warnings.filterwarnings('ignore')
 
