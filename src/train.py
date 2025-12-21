@@ -6,7 +6,7 @@ import mlflow
 import mlflow.sklearn
 
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
+import xgboost as xgb
 from sklearn.metrics import accuracy_score
 
 from data_loaders import TabularDataLoader
@@ -75,7 +75,7 @@ def train_model(X_train, y_train, args):
     """
     Train your model.
     """
-    model = RandomForestClassifier(
+    model = xgb.XGBClassifier(
         n_estimators=args.n_estimators,  # TODO: Get from args.n_estimators
         max_depth=args.max_depth,      # TODO: Get from args.max_depth
         random_state=args.random_state
