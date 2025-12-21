@@ -55,18 +55,6 @@ class BaseDataLoader(ABC):
         """
     
     @abstractmethod
-    def log_to_mlflow(self, context: str = "training"):
-        """
-        Log dataset to MLflow with proper source information.
-        
-        Args:
-            context: Context for the dataset (e.g., 'training', 'validation')
-        
-        Returns:
-            MLflow Dataset object
-        """
-        
-    @abstractmethod
     def get_data_info(self) -> dict:
         """
         Get dataset metadata for logging.
