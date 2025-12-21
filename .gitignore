@@ -234,7 +234,6 @@ venv/
 .DS_Store
 Thumbs.db
 reproducibility_manifest.csv
-data/
 BRAINSTORMING.md
 config.yaml
 
@@ -282,14 +281,6 @@ reproducibility_manifest.csv
 *.pkl
 *.joblib
 
-# DVC - Track .dvc files but NOT the actual data
-/data/iris.csv
-/data/*.csv
-/data/*.parquet
-.dvc/cache
-.dvc/tmp
-.dvc_storage/
-
 # Config - NOT tracked (by design for experimentation)
 config.yaml
 
@@ -304,10 +295,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
-
-# DVC
-/data/iris.csv
-.dvc_storage/
 
 # Config (not tracked - can change without commits)
 config.yaml
@@ -343,15 +330,6 @@ ENV/
 *.swo
 *~
 .DS_Store
-
-# DVC - Track .dvc files but NOT actual data
-/data/dataset.csv
-/data/*.csv
-/data/*.parquet
-/data/*.pkl
-.dvc/cache/
-.dvc/tmp/
-.dvc_storage/
 
 # Models and outputs
 /models/
