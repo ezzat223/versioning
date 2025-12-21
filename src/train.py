@@ -164,8 +164,8 @@ def main():
             mlflow.log_param(key, value)
         
         mlflow.log_params({
-            "learning_rate": args.learning_rate,
             "n_estimators": args.n_estimators,
+            "max_depth": args.max_depth
         })
         
         # Train model
