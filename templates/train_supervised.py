@@ -28,6 +28,7 @@ from src.utils import get_git_metadata, validate_git_state
 
 warnings.filterwarnings('ignore')
 
+mlflow.set_tracking_uri("http://localhost:5001")
 
 # =============================================================================
 # MLFLOW AUTOLOGGING (Uncomment the framework you're using)
@@ -363,7 +364,7 @@ def main():
         
         mlflow.sklearn.log_model(
             model,
-            artifact_path="model",
+            name="model",
             signature=signature,
             registered_model_name=args.model_name
         )
