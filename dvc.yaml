@@ -1,143 +1,36 @@
-# DVC Pipeline Template
-#
-# INSTRUCTIONS FOR DATA SCIENTISTS:
-# 1. Copy this file to dvc.yaml in project root
-# 2. Choose the stage for your task (supervised/unsupervised)
-# 3. Uncomment and customize the section you need
-# 4. Delete unused sections and these instructions
-# 5. Update paths, parameters, and dependencies as needed
-#
-# Usage:
-#   dvc repro              - Run entire pipeline
-#   dvc dag                - View pipeline DAG
-#   dvc metrics show       - Show metrics
-#   dvc params diff        - Compare parameter changes
-
-# =============================================================================
-# SUPERVISED LEARNING PIPELINE (Uncomment if using supervised)
-# =============================================================================
-
-# stages:
-#   train_supervised:
-#     cmd: >
-#       mlflow run . -e supervised
-#       -P data_path=${data.path}
-#       -P target_column=${supervised.target_column}
-#       -P test_size=${data.test_size}
-#       -P validation_size=${data.validation_size}
-#       -P random_state=${data.random_state}
-#     deps:
-#       - train.py
-#       - src/data_loaders/
-#       - src/utils.py
-#       - ${data.path}
-#     params:
-#       - data.path
-#       - data.test_size
-#       - data.validation_size
-#       - data.random_state
-#       - supervised.target_column
-#       # TODO: Add your model's hyperparameters
-#       # Example:
-#       # - supervised.model.n_estimators
-#       # - supervised.model.max_depth
-#       # - supervised.model.learning_rate
-#     outs:
-#       - models/model.pkl
-#     metrics:
-#       - metrics.json:
-#           cache: false
-
-
-# =============================================================================
-# UNSUPERVISED LEARNING PIPELINE (Uncomment if using unsupervised)
-# =============================================================================
-
-# stages:
-#   train_unsupervised:
-#     cmd: >
-#       mlflow run . -e unsupervised
-#       -P data_path=${data.path}
-#       -P test_size=${data.test_size}
-#       -P validation_size=${data.validation_size}
-#       -P random_state=${data.random_state}
-#     deps:
-#       - train.py
-#       - src/data_loaders/
-#       - src/utils.py
-#       - ${data.path}
-#     params:
-#       - data.path
-#       - data.test_size
-#       - data.validation_size
-#       - data.random_state
-#       # TODO: Add your model's hyperparameters
-#       # Example:
-#       # - unsupervised.model.n_clusters
-#       # - unsupervised.model.max_iter
-#     outs:
-#       - models/model.pkl
-#     metrics:
-#       - metrics.json:
-#           cache: false
-
-
-# =============================================================================
-# MULTI-STAGE PIPELINE EXAMPLE (Advanced)
-# =============================================================================
-# Uncomment and customize if you need multiple stages
-# (e.g., preprocessing → feature engineering → training → evaluation)
-
-# stages:
-#   preprocess:
-#     cmd: python scripts/preprocess.py ${data.raw_path} ${data.processed_path}
-#     deps:
-#       - scripts/preprocess.py
-#       - ${data.raw_path}
-#     params:
-#       - data.raw_path
-#       - data.processed_path
-#     outs:
-#       - ${data.processed_path}
-#   
-#   feature_engineering:
-#     cmd: python scripts/feature_engineering.py ${data.processed_path} ${data.features_path}
-#     deps:
-#       - scripts/feature_engineering.py
-#       - ${data.processed_path}
-#     params:
-#       - data.processed_path
-#       - data.features_path
-#     outs:
-#       - ${data.features_path}
-#   
-#   train:
-#     cmd: python train.py --data-path ${data.features_path}
-#     deps:
-#       - train.py
-#       - ${data.features_path}
-#     params:
-#       - data.features_path
-#       # Add model params
-#     outs:
-#       - models/model.pkl
-#     metrics:
-#       - metrics.json:
-#           cache: false
-#   
-#   evaluate:
-#     cmd: python scripts/evaluate.py models/model.pkl ${data.test_path}
-#     deps:
-#       - scripts/evaluate.py
-#       - models/model.pkl
-#       - ${data.test_path}
-#     metrics:
-#       - evaluation.json:
-#           cache: false
-#     plots:
-#       - plots/confusion_matrix.png
-#       - plots/roc_curve.png
-
+stages:
+  train_supervised:
+    cmd: >
+      mlflow run . -e supervised
+      -P data_path=${data.path}
+      -P target_column=${supervised.target_column}
+      -P test_size=${data.test_size}
+      -P validation_size=${data.validation_size}
+      -P random_state=${data.random_state}
+      -P n_estimators=${supervised.model.n_estimators}
+      -P max_depth=${supervised.model.max_depth}
+      -P experiment_name=${mlflow.experiment_name}
+      -P model_name=${mlflow.model_name}
+    deps:
+      - train.py
+      - src/data_loaders/
+      - src/utils.py
+      - ${data.path}
+    params:
+      - data.path
+      - data.test_size
+      - data.validation_size
+      - data.random_state
+      - supervised.target_column
+      # Model's hyperparameters
+      - supervised.model.n_estimators
+      - supervised.model.max_depth
+      # - supervised.model.learning_rate
+    outs:
+      - models/model.pkl
+    metrics:
+      - metrics.json:
+          cache: false
 
 # =============================================================================
 # NOTES FOR DATA SCIENTISTS
