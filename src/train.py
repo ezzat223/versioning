@@ -157,16 +157,11 @@ def main():
         print(loader.summary())
         
         # Log dataset to MLflow
-        loader.log_to_mlflow(context="training")
+        # loader.log_to_mlflow(context="training")
         
         # Log data info
         for key, value in loader.get_data_info().items():
             mlflow.log_param(key, value)
-        
-        mlflow.log_params({
-            "n_estimators": args.n_estimators,
-            "max_depth": args.max_depth
-        })
         
         # Train model
         print("\n" + "-"*60)
@@ -175,9 +170,6 @@ def main():
         # Evaluate model
         print("\n" + "-"*60)
         metrics = evaluate_model(model, X_train, X_test, y_train, y_test, X_val, y_val)
-        
-        # Log metrics
-        mlflow.log_metrics(metrics)
         
         # Save model locally
         print("\n" + "-"*60)
@@ -194,14 +186,6 @@ def main():
         with open("metrics.json", 'w') as f:
             json.dump(metrics, f, indent=2)
         
-        signature = infer_signature(X_train, model.predict(X_train))
-        
-        mlflow.sklearn.log_model(
-            model,
-            name="model",
-            signature=signature,
-            registered_model_name=args.model_name
-        )
         print(f"✓ Model registered as '{args.model_name}'")
         
         print("\n" + "="*60)
