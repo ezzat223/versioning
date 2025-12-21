@@ -42,8 +42,6 @@
 #       # - supervised.model.n_estimators
 #       # - supervised.model.max_depth
 #       # - supervised.model.learning_rate
-#     outs:
-#       - models/model.pkl
 #     metrics:
 #       - metrics.json:
 #           cache: false
@@ -75,8 +73,6 @@
 #       # Example:
 #       # - unsupervised.model.n_clusters
 #       # - unsupervised.model.max_iter
-#     outs:
-#       - models/model.pkl
 #     metrics:
 #       - metrics.json:
 #           cache: false
@@ -119,8 +115,6 @@
 #     params:
 #       - data.features_path
 #       # Add model params
-#     outs:
-#       - models/model.pkl
 #     metrics:
 #       - metrics.json:
 #           cache: false

@@ -26,8 +26,6 @@ stages:
       - supervised.model.n_estimators
       - supervised.model.max_depth
       # - supervised.model.learning_rate
-    outs:
-      - models/model.pkl
     metrics:
       - metrics.json:
           cache: false
