@@ -233,8 +233,8 @@ def train_model(X_train, y_train, args):
     from sklearn.ensemble import RandomForestClassifier
     
     model = RandomForestClassifier(
-        n_estimators=100,  # TODO: Get from args
-        max_depth=10,      # TODO: Get from args
+        n_estimators=args.n_estimators,  # TODO: Get from args
+        max_depth=args.max_depth,      # TODO: Get from args
         random_state=args.random_state
     )
     

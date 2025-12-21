@@ -1,18 +1,8 @@
 """
-TEMPLATE: Supervised Learning Training Script
-
 INSTRUCTIONS FOR DATA SCIENTISTS:
 1. Choose your data loader (delete the other two examples)
 2. Implement your model selection logic
 3. Add your model's hyperparameters to params.yaml and MLproject
-4. Implement your evaluation metrics
-5. Delete these instructions and comments when ready
-
-This template provides:
-- Proper MLflow logging
-- Git metadata tracking
-- Data versioning with DVC
-- Three data loader examples (pick one, delete others)
 """
 import argparse
 import json
@@ -24,92 +14,22 @@ import mlflow
 import mlflow.sklearn
 import pandas as pd
 
+from sklearn.ensemble import RandomForestClassifier
+
 from src.utils import get_git_metadata, validate_git_state
 
 warnings.filterwarnings('ignore')
 
 
-# =============================================================================
-# MLFLOW AUTOLOGGING (Uncomment the framework you're using)
-# =============================================================================
-# Autologging automatically captures metrics, parameters, and models
-# Comment out or delete the frameworks you're NOT using
-
-# Generic autolog (works for most frameworks)
-mlflow.autolog(
+# Autologging configuration
+mlflow.sklearn.autolog(
     log_input_examples=True,
     log_model_signatures=True,
     log_models=True,
-    disable=False,
-    exclusive=False,  # Allow manual logging too
-    silent=True
+    max_tuning_runs=5,   # For hyperparameter tuning
+    exclusive=False,     # Allow manual logging too
+    silent=True,         # Suppress autologging errors
 )
-
-# Framework-specific autolog (uncomment if you need more control)
-# import mlflow.sklearn
-# mlflow.sklearn.autolog(
-#     log_input_examples=True,
-#     log_model_signatures=True,
-#     log_models=True,
-#     max_tuning_runs=5  # For hyperparameter tuning
-# )
-
-# import mlflow.xgboost
-# mlflow.xgboost.autolog(
-#     log_input_examples=True,
-#     log_model_signatures=True,
-#     log_models=True
-# )
-
-# import mlflow.lightgbm
-# mlflow.lightgbm.autolog(
-#     log_input_examples=True,
-#     log_model_signatures=True,
-#     log_models=True
-# )
-
-# import mlflow.tensorflow
-# mlflow.tensorflow.autolog(
-#     log_input_examples=True,
-#     log_model_signatures=True,
-#     log_models=True,
-#     every_n_iter=1
-# )
-
-# import mlflow.pytorch
-# mlflow.pytorch.autolog(
-#     log_input_examples=True,
-#     log_model_signatures=True,
-#     log_models=True
-# )
-
-# import mlflow.keras
-# mlflow.keras.autolog(
-#     log_input_examples=True,
-#     log_model_signatures=True,
-#     log_models=True
-# )
-
-# import mlflow.fastai
-# mlflow.fastai.autolog(
-#     log_input_examples=True,
-#     log_model_signatures=True,
-#     log_models=True
-# )
-
-# import mlflow.statsmodels
-# mlflow.statsmodels.autolog(
-#     log_models=True
-# )
-
-# import mlflow.spark
-# mlflow.spark.autolog(
-#     log_input_examples=True,
-#     log_model_signatures=True,
-#     log_models=True
-# )
-
-# =============================================================================
 
 
 def parse_args():
@@ -117,21 +37,20 @@ def parse_args():
     parser = argparse.ArgumentParser()
     
     # Data parameters
-    parser.add_argument("--data-path", type=str, required=True)
-    parser.add_argument("--target-column", type=str, required=True)
+    parser.add_argument("--data-path", type=str, required=True, default="data/processed/iris.csv")
+    parser.add_argument("--target-column", type=str, required=True, default="target")
     parser.add_argument("--test-size", type=float, default=0.2)
-    parser.add_argument("--validation-size", type=float, default=0.0)
+    parser.add_argument("--validation-size", type=float, default=0.1)
     parser.add_argument("--random-state", type=int, default=42)
     
-    # TODO: Add your model's hyperparameters here
-    # Example:
-    # parser.add_argument("--learning-rate", type=float, default=0.001)
-    # parser.add_argument("--n-estimators", type=int, default=100)
+    # Model hyperparameters
+    parser.add_argument("--n-estimators", type=int, default=100)
+    parser.add_argument("--max-depth", type=int, default=10)
     
     # MLflow parameters
-    parser.add_argument("--experiment-name", type=str, default="my-experiment")
-    parser.add_argument("--model-name", type=str, default="my-model")
-    parser.add_argument("--strict-git", type=str, default="false")
+    parser.add_argument("--experiment-name", type=str, default="iris-classification")
+    parser.add_argument("--model-name", type=str, default="iris-classifier")
+    parser.add_argument("--strict-git", type=str, default="true")
     
     return parser.parse_args()
 
@@ -140,18 +59,9 @@ def load_data(args):
     """
     Load and split data using appropriate data loader.
     
-    INSTRUCTIONS:
-    1. Uncomment the loader you need (tabular, image, or database)
-    2. Delete the other two examples
-    3. Customize parameters as needed
-    
     Returns:
         X_train, X_test, y_train, y_test, X_val, y_val, loader
     """
-    
-    # ============================================================
-    # OPTION 1: TABULAR DATA (CSV, Parquet, Excel)
-    # ============================================================
     from src.data_loaders import TabularDataLoader
     
     loader = TabularDataLoader(
@@ -164,77 +74,14 @@ def load_data(args):
     
     X_train, X_test, y_train, y_test, X_val, y_val = loader.load_and_split()
     
-    # ============================================================
-    # OPTION 2: IMAGE DATA
-    # ============================================================
-    # from src.data_loaders import ImageDataLoader
-    # 
-    # loader = ImageDataLoader(
-    #     data_path=args.data_path,
-    #     structure_type="directory",  # or "csv"
-    #     target_column=args.target_column,  # None if classes from folders
-    #     image_size=(224, 224),
-    #     test_size=args.test_size,
-    #     validation_size=args.validation_size,
-    #     random_state=args.random_state
-    # )
-    # 
-    # # Get splits (DataFrames with image paths)
-    # X_train, X_test, y_train, y_test, X_val, y_val = loader.load_and_split()
-    # 
-    # # TODO: Load actual images when needed for your model
-    # # images_train = loader.load_images(X_train)
-    # # images_test = loader.load_images(X_test)
-    
-    # ============================================================
-    # OPTION 3: DATABASE
-    # ============================================================
-    # from sqlalchemy import create_engine
-    # from src.data_loaders import DatabaseDataLoader
-    # 
-    # # Setup your database connection
-    # engine = create_engine('postgresql://user:pass@localhost/db')
-    # 
-    # loader = DatabaseDataLoader(
-    #     client=engine,
-    #     table_name="my_table",
-    #     target_column=args.target_column,
-    #     database_type="postgresql",
-    #     cache_data=True,
-    #     cache_path=".cache/my_data.parquet",
-    #     test_size=args.test_size,
-    #     validation_size=args.validation_size,
-    #     random_state=args.random_state
-    # )
-    # 
-    # X_train, X_test, y_train, y_test, X_val, y_val = loader.load_and_split()
-    
     return X_train, X_test, y_train, y_test, X_val, y_val, loader
 
 
 def train_model(X_train, y_train, args):
-    """
-    Train your model.
-    
-    INSTRUCTIONS:
-    1. Replace this placeholder with your actual model
-    2. Import your model class (e.g., XGBoost, LightGBM, PyTorch model)
-    3. Use hyperparameters from args
-    4. Return the trained model
-    
-    Example models:
-    - RandomForestClassifier (sklearn)
-    - XGBClassifier (xgboost)
-    - LGBMClassifier (lightgbm)
-    - PyTorch/TensorFlow models
-    """
-    
-    # TODO: Replace this with your model!
-    from sklearn.ensemble import RandomForestClassifier
     
     model = RandomForestClassifier(
-        n_estimators=100,  # TODO: Get from args
-        max_depth=10,      # TODO: Get from args
+        n_estimators=args.n_estimators,
+        max_depth=args.max_depth,
         random_state=args.random_state
     )
     
@@ -246,14 +93,6 @@ def train_model(X_train, y_train, args):
 
 
 def evaluate_model(model, X_train, X_test, y_train, y_test, X_val=None, y_val=None):
-    """
-    Evaluate model and return metrics.
-    
-    INSTRUCTIONS:
-    1. Add metrics relevant to your task (classification, regression, etc.)
-    2. Consider adding custom metrics specific to your problem
-    3. Return dictionary of metrics to log to MLflow
-    """
     
     # TODO: Replace with your evaluation metrics!
     from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
