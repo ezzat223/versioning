@@ -12,9 +12,11 @@ from pathlib import Path
 
 import mlflow
 import mlflow.sklearn
+from mlflow.models import infer_signature
 import pandas as pd
 
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
 from utils import get_git_metadata, validate_git_state
 from data_loaders import TabularDataLoader
@@ -27,7 +29,7 @@ mlflow.set_tracking_uri("http://localhost:5001")
 mlflow.sklearn.autolog(
     log_input_examples=True,
     log_model_signatures=True,
-    log_models=True,
+    log_models=False,    # We'll log the model manually
     max_tuning_runs=5,   # For hyperparameter tuning
     exclusive=False,     # Allow manual logging too
     silent=True,         # Suppress autologging errors
@@ -50,8 +52,8 @@ def parse_args():
     parser.add_argument("--max-depth", type=int, default=10)
     
     # MLflow parameters
-    parser.add_argument("--experiment-name", type=str, default="iris-classification")
-    parser.add_argument("--model-name", type=str, default="iris-classifier")
+    parser.add_argument("--experiment-name", type=str, default="iris-classification-1")
+    parser.add_argument("--model-name", type=str, default="iris-classifier-1")
     parser.add_argument("--strict-git", type=str, default="true")
     
     return parser.parse_args()
@@ -94,9 +96,6 @@ def train_model(X_train, y_train, args):
 
 
 def evaluate_model(model, X_train, X_test, y_train, y_test, X_val=None, y_val=None):
-    
-    # TODO: Replace with your evaluation metrics!
-    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
     
     print("Evaluating model...")
     
@@ -164,12 +163,10 @@ def main():
         for key, value in loader.get_data_info().items():
             mlflow.log_param(key, value)
         
-        # TODO: Log your model hyperparameters
-        # Example:
-        # mlflow.log_params({
-        #     "learning_rate": args.learning_rate,
-        #     "n_estimators": args.n_estimators,
-        # })
+        mlflow.log_params({
+            "learning_rate": args.learning_rate,
+            "n_estimators": args.n_estimators,
+        })
         
         # Train model
         print("\n" + "-"*60)
@@ -197,8 +194,6 @@ def main():
         with open("metrics.json", 'w') as f:
             json.dump(metrics, f, indent=2)
         
-        # Log model to MLflow
-        from mlflow.models import infer_signature
         signature = infer_signature(X_train, model.predict(X_train))
         
         mlflow.sklearn.log_model(

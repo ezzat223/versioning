@@ -4,7 +4,6 @@ Supports supervised and unsupervised learning with DVC tracking.
 """
 import pandas as pd
 import mlflow
-from pathlib import Path
 from typing import Tuple, Optional
 from sklearn.model_selection import train_test_split
 
