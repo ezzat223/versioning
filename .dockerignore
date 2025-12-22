@@ -1,0 +1,69 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.gitlab-ci.yml
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+
+# Data (not needed in inference container)
+data/
+notebooks/
+reports/
+
+# DVC
+.dvc/
+*.dvc
+.dvcignore
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Configs (use environment variables instead)
+*.env
+.env.*
+!.env.example
+
+# Temporary files
+*.log
+*.tmp
+.DS_Store
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore

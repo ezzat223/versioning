@@ -1,0 +1,349 @@
+# =============================================================================
+# MLOps CI/CD Pipeline - GitLab
+# =============================================================================
+# Pipeline Philosophy:
+# - Automation + Simplicity = Professionalism
+# - Fast feedback loops
+# - Fail fast on quality issues
+# - Auto-promote models when they improve
+# =============================================================================
+
+variables:
+  PYTHON_VERSION: "3.11"
+  MLFLOW_TRACKING_URI: "http://127.0.0.1:5001"
+  DOCKER_IMAGE_NAME: "your-dockerhub-username/iris-classifier"  # CHANGE THIS
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  CONDA_PKGS_DIRS: "$CI_PROJECT_DIR/.cache/conda/pkgs"
+
+# Define pipeline stages
+stages:
+  - quality      # Code quality & security
+  - validate     # Data validation
+  - train        # Train challenger model
+  - evaluate     # Compare & decide
+  - deploy       # Build & push Docker
+  - release      # Tag & release
+
+# Cache dependencies for faster builds
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .cache/pip
+    - .cache/conda
+    - .venv/
+
+# =============================================================================
+# STAGE 1: CODE QUALITY & SECURITY
+# =============================================================================
+
+code_quality:
+  stage: quality
+  image: python:${PYTHON_VERSION}-slim
+  before_script:
+    - pip install --upgrade pip
+    - pip install black flake8 mypy bandit safety
+  script:
+    # Code formatting check
+    - echo "🎨 Checking code formatting with Black..."
+    - black --check src/ scripts/ || (echo "❌ Code not formatted. Run 'black src/ scripts/'" && exit 1)
+
+    # Linting
+    - echo "🔍 Running flake8 linting..."
+    - flake8 src/ scripts/ --max-line-length=100 --ignore=E203,W503 || true
+
+    # Type checking
+    - echo "📝 Running mypy type checking..."
+    - mypy src/ scripts/ --ignore-missing-imports || true
+
+    # Security scan
+    - echo "🔒 Running security checks..."
+    - bandit -r src/ -ll || true
+    - safety check --json || true
+
+    - echo "✅ Code quality checks completed"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+
+# =============================================================================
+# STAGE 2: DATA VALIDATION
+# =============================================================================
+
+data_validation:
+  stage: validate
+  image: continuumio/miniconda3:latest
+  before_script:
+    - conda env create -f environment.yml -n mlops || conda env update -f environment.yml -n mlops
+    - source activate mlops
+    - pip install great-expectations
+  script:
+    - echo "📊 Validating data quality..."
+
+    # Pull latest data from DVC
+    - dvc pull || echo "⚠️ DVC pull failed, using local data"
+
+    # Run data validation
+    - python scripts/data_validation.py --data-path data/processed/iris.csv
+
+    - echo "✅ Data validation completed"
+  artifacts:
+    reports:
+      junit: data_validation_report.xml
+    paths:
+      - data_validation_report.json
+    expire_in: 30 days
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+
+# =============================================================================
+# STAGE 3: TRAIN CHALLENGER MODEL
+# =============================================================================
+
+train_challenger:
+  stage: train
+  image: continuumio/miniconda3:latest
+  services:
+    - name: mlflow/mlflow:latest
+      alias: mlflow
+  variables:
+    MLFLOW_TRACKING_URI: "http://mlflow:5000"
+  before_script:
+    - conda env create -f environment.yml -n mlops || conda env update -f environment.yml -n mlops
+    - source activate mlops
+  script:
+    - echo "🚀 Training challenger model..."
+
+    # Pull latest data
+    - dvc pull
+
+    # Start MLflow server in background (if not using service)
+    # - mlflow server --host 0.0.0.0 --port 5001 &
+    # - sleep 5
+
+    # Train model with challenger tag
+    - |
+      python src/train.py \
+        --data-path data/processed/iris.csv \
+        --target-column target \
+        --test-size 0.2 \
+        --validation-size 0.1 \
+        --random-state 42 \
+        --n-estimators 100 \
+        --max-depth 10 \
+        --experiment-name iris-classification-ci \
+        --model-name iris-classifier-ci \
+        --strict-git false
+
+    # Tag the run as challenger
+    - python scripts/tag_challenger.py
+
+    - echo "✅ Challenger model trained"
+  artifacts:
+    paths:
+      - metrics.json
+      - mlruns/
+    expire_in: 30 days
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+
+# =============================================================================
+# STAGE 4: EVALUATE & COMPARE MODELS
+# =============================================================================
+
+evaluate_models:
+  stage: evaluate
+  image: continuumio/miniconda3:latest
+  before_script:
+    - conda env create -f environment.yml -n mlops || conda env update -f environment.yml -n mlops
+    - source activate mlops
+    - pip install cml
+  script:
+    - echo "📊 Comparing challenger vs champion..."
+
+    # Compare models
+    - python scripts/compare_models.py --experiment-name iris-classification-ci --output comparison_report.json
+
+    # Generate CML report
+    - python scripts/generate_cml_report.py --comparison comparison_report.json --output cml_report.md
+
+    # Post CML report to commit/MR
+    - |
+      if [ -f cml_report.md ]; then
+        cml comment create cml_report.md
+      fi
+
+    # Decision: Auto-promote if challenger is better
+    - |
+      PROMOTE=$(python -c "
+      import json
+      with open('comparison_report.json', 'r') as f:
+          report = json.load(f)
+      print('yes' if report.get('promote_challenger', False) else 'no')
+      ")
+
+      if [ "$PROMOTE" == "yes" ]; then
+        echo "✅ Challenger outperforms champion - will promote"
+        echo "PROMOTE_MODEL=true" >> promote.env
+      else
+        echo "⚠️ Challenger does not outperform champion - keeping current"
+        echo "PROMOTE_MODEL=false" >> promote.env
+      fi
+
+  artifacts:
+    paths:
+      - comparison_report.json
+      - cml_report.md
+    reports:
+      dotenv: promote.env
+    expire_in: 30 days
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+
+# =============================================================================
+# STAGE 5: MODEL PROMOTION
+# =============================================================================
+
+promote_model:
+  stage: evaluate
+  image: continuumio/miniconda3:latest
+  needs: ["evaluate_models"]
+  before_script:
+    - conda env create -f environment.yml -n mlops || conda env update -f environment.yml -n mlops
+    - source activate mlops
+  script:
+    - echo "🏆 Promoting challenger to champion..."
+
+    # Promote model in MLflow
+    - python scripts/promote_model.py --experiment-name iris-classification-ci
+
+    # Save model version info
+    - python scripts/get_model_version.py --output model_version.env
+
+    - echo "✅ Model promoted successfully"
+  artifacts:
+    reports:
+      dotenv: model_version.env
+    expire_in: 30 days
+  rules:
+    - if: '$PROMOTE_MODEL == "true"'
+
+# =============================================================================
+# STAGE 6: BUILD & PUSH DOCKER IMAGE
+# =============================================================================
+
+build_docker:
+  stage: deploy
+  image: docker:24
+  services:
+    - docker:24-dind
+  needs: ["promote_model"]
+  before_script:
+    - docker login -u $DOCKER_HUB_USERNAME -p $DOCKER_HUB_TOKEN
+  script:
+    - echo "🐳 Building Docker image..."
+
+    # Get model version from artifacts
+    - export MODEL_VERSION=${MODEL_VERSION:-latest}
+
+    # Build multi-arch image
+    - |
+      docker build \
+        --build-arg MODEL_VERSION=$MODEL_VERSION \
+        -t ${DOCKER_IMAGE_NAME}:${MODEL_VERSION} \
+        -t ${DOCKER_IMAGE_NAME}:latest \
+        -t ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA} \
+        .
+
+    # Push all tags
+    - docker push ${DOCKER_IMAGE_NAME}:${MODEL_VERSION}
+    - docker push ${DOCKER_IMAGE_NAME}:latest
+    - docker push ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}
+
+    - echo "✅ Docker image pushed successfully"
+    - echo "📦 Images:"
+    - echo "   - ${DOCKER_IMAGE_NAME}:${MODEL_VERSION}"
+    - echo "   - ${DOCKER_IMAGE_NAME}:latest"
+    - echo "   - ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}"
+  rules:
+    - if: '$PROMOTE_MODEL == "true" && $CI_COMMIT_BRANCH == "main"'
+
+# =============================================================================
+# STAGE 7: CREATE RELEASE
+# =============================================================================
+
+create_release:
+  stage: release
+  image: alpine:latest
+  needs: ["build_docker"]
+  before_script:
+    - apk add --no-cache git curl jq
+  script:
+    - echo "🏷️ Creating release..."
+
+    # Get model version
+    - export MODEL_VERSION=${MODEL_VERSION:-v1.0.0}
+
+    # Create git tag
+    - git config user.email "ci@gitlab.com"
+    - git config user.name "GitLab CI"
+    - git tag -a ${MODEL_VERSION} -m "Release ${MODEL_VERSION} - Model promoted"
+    - git push origin ${MODEL_VERSION} || echo "Tag already exists"
+
+    # Generate release notes
+    - |
+      cat > RELEASE_NOTES.md << EOF
+      # Release ${MODEL_VERSION}
+
+      ## Model Performance
+      - Test Accuracy: ${TEST_ACCURACY}
+      - Model Type: XGBoost Classifier
+
+      ## Docker Image
+      \`\`\`
+      docker pull ${DOCKER_IMAGE_NAME}:${MODEL_VERSION}
+      \`\`\`
+
+      ## Commit
+      - SHA: ${CI_COMMIT_SHORT_SHA}
+      - Branch: ${CI_COMMIT_BRANCH}
+      - Author: ${GITLAB_USER_NAME}
+
+      ## Changes
+      ${CI_COMMIT_MESSAGE}
+      EOF
+
+    - cat RELEASE_NOTES.md
+
+    - echo "✅ Release created: ${MODEL_VERSION}"
+  artifacts:
+    paths:
+      - RELEASE_NOTES.md
+    expire_in: 1 year
+  rules:
+    - if: '$PROMOTE_MODEL == "true" && $CI_COMMIT_BRANCH == "main"'
+
+# =============================================================================
+# MANUAL JOBS (Optional)
+# =============================================================================
+
+# Manual rollback job
+rollback_model:
+  stage: deploy
+  image: continuumio/miniconda3:latest
+  before_script:
+    - conda env create -f environment.yml -n mlops || conda env update -f environment.yml -n mlops
+    - source activate mlops
+  script:
+    - echo "⏪ Rolling back to previous champion..."
+    - python scripts/rollback_model.py --experiment-name iris-classification-ci
+    - echo "✅ Rollback completed"
+  when: manual
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'

@@ -1,91 +1,157 @@
-.PHONY: _prep create_environment requirements format lint docs docs-serve test \
-	test-fastest test-debug-fastest _clean_manual_test manual-test manual-test-debug
+SHELL = /bin/bash
+.PHONY: help _prep create_environment requirements format lint style clean \
+    clean-build clean-pyc clean-test docs docs-serve test setup-precommit
 
 ## GLOBALS
+PROJECT_NAME = mlops-versioning
+PYTHON_VERSION = 3.11
+PYTHON_INTERPRETER = python3
 
-PROJECT_NAME = cookiecutter-data-science
-PYTHON_VERSION = 3.10
-PYTHON_INTERPRETER = python
+###############################################################################
+# HELP
+###############################################################################
 
+help:
+	@echo "Commands:"
+	@echo "  setup-precommit    : Install and configure pre-commit hooks"
+	@echo "  create_environment : Create conda environment"
+	@echo "  requirements       : Install Python dependencies"
+	@echo "  style              : Format code with black, isort"
+	@echo "  lint               : Check code style and quality"
+	@echo "  clean              : Remove temporary files and caches"
+	@echo "  clean-all          : Remove all build, test, and cache files"
+	@echo "  docs               : Build documentation"
+	@echo "  docs-serve         : Serve documentation locally"
+	@echo "  test               : Run tests"
 
-###     UTILITIES
-_prep:
-	rm -f **/*/.DS_store
-
-
-###     DEV COMMANDS
+###############################################################################
+# SETUP
+###############################################################################
 
 ## Set up python interpreter environment
 create_environment:
-	conda create --name $(PROJECT_NAME) python=$(PYTHON_VERSION) -y
+	conda create -f environment.yaml -y
 	@echo ">>> conda env created. Activate with:\nconda activate $(PROJECT_NAME)"
 
 ## Install Python Dependencies
 requirements:
-	$(PYTHON_INTERPRETER) -m pip install -U -r dev-requirements.txt
+	$(PYTHON_INTERPRETER) -m pip install -U pip setuptools wheel
+	$(PYTHON_INTERPRETER) -m pip install -U -r requirements.txt
+
+## Setup pre-commit hooks
+setup-precommit:
+	$(PYTHON_INTERPRETER) -m pip install pre-commit
+	pre-commit install
+	pre-commit autoupdate
+	@echo ">>> Pre-commit hooks installed successfully"
+	@echo ">>> Run 'pre-commit run --all-files' to test"
+
+###############################################################################
+# DEVELOPMENT
+###############################################################################
 
 ## Format the code using isort and black
 format:
-	isort --profile black ccds hooks tests docs/scripts
-	black ccds hooks tests docs/scripts
+	$(PYTHON_INTERPRETER) -m isort --profile black src/ scripts/ notebooks/
+	$(PYTHON_INTERPRETER) -m black --line-length 100 src/ scripts/ notebooks/
 
+## Lint code with flake8, isort, and black
 lint:
-	flake8 ccds hooks tests docs/scripts
-	isort --check --profile black ccds hooks tests docs/scripts
-	black --check ccds hooks tests docs/scripts
+	$(PYTHON_INTERPRETER) -m flake8 src/ scripts/ --max-line-length=100 --ignore=E203,W503
+	$(PYTHON_INTERPRETER) -m isort --check --profile black src/ scripts/ notebooks/
+	$(PYTHON_INTERPRETER) -m black --check --line-length 100 src/ scripts/ notebooks/
 
-clean: clean-build clean-pyc clean-test ## remove all build, test, coverage and Python artifacts
+## Style: Format and check code
+style: format lint
 
-clean-build: ## remove build artifacts
-	rm -fr build/
-	rm -fr dist/
-	rm -fr .eggs/
-	find . -name '*.egg-info' -exec rm -fr {} +
-	find . -name '*.egg' -exec rm -f {} +
+###############################################################################
+# CLEANING
+###############################################################################
 
-clean-pyc: ## remove Python file artifacts
+## Remove temporary files and caches
+clean:
+	@echo "Cleaning temporary files..."
+	find . -type f -name "*.DS_Store" -ls -delete
+	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -delete
+	find . -type f -name "*.pyo" -delete
+	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name ".ipynb_checkpoints" -exec rm -rf {} + 2>/dev/null || true
+	rm -rf .coverage* htmlcov/ .tox/
+	@echo "✓ Cleanup complete"
+
+## Remove build artifacts
+clean-build:
+	@echo "Cleaning build artifacts..."
+	rm -rf build/
+	rm -rf dist/
+	rm -rf .eggs/
+	find . -name '*.egg-info' -exec rm -rf {} + 2>/dev/null || true
+	find . -name '*.egg' -exec rm -f {} + 2>/dev/null || true
+	@echo "✓ Build cleanup complete"
+
+## Remove Python file artifacts
+clean-pyc:
+	@echo "Cleaning Python artifacts..."
 	find . -name '*.pyc' -exec rm -f {} +
 	find . -name '*.pyo' -exec rm -f {} +
 	find . -name '*~' -exec rm -f {} +
-	find . -name '__pycache__' -exec rm -fr {} +
+	find . -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+	@echo "✓ Python artifacts cleaned"
 
-clean-test: ## remove test and coverage artifacts
-	rm -fr .tox/
+## Remove test and coverage artifacts
+clean-test:
+	@echo "Cleaning test artifacts..."
+	rm -rf .tox/
 	rm -f .coverage
-	rm -fr htmlcov/
-	rm -fr .pytest_cache
+	rm -rf htmlcov/
+	rm -rf .pytest_cache
+	@echo "✓ Test artifacts cleaned"
 
-dist: clean ## builds source and wheel package
-	python -m build
-	ls -l dist
+## Complete cleanup
+clean-all: clean clean-build clean-pyc clean-test
+	@echo "✓ Complete cleanup finished"
 
+###############################################################################
+# DOCUMENTATION
+###############################################################################
 
-###     DOCS
-
+## Build documentation
 docs:
+	@echo "Building documentation..."
 	cd docs && mkdocs build
+	@echo "✓ Documentation built"
 
+## Serve documentation locally
 docs-serve:
+	@echo "Serving documentation at http://127.0.0.1:8000"
 	cd docs && mkdocs serve
 
-###     TESTS
+###############################################################################
+# TESTING
+###############################################################################
 
-test: _prep
-	pytest -vvv --durations=0 tests
+## Run tests
+test:
+	@echo "Running tests..."
+	pytest -vv tests/
+	@echo "✓ Tests complete"
 
-test-fastest: _prep
-	pytest -vvv -FFF
+## Run tests with coverage
+test-coverage:
+	@echo "Running tests with coverage..."
+	pytest --cov=src --cov-report=html --cov-report=term tests/
+	@echo "✓ Coverage report generated in htmlcov/"
 
-test-debug-last:
-	pytest --lf --pdb
+###############################################################################
+# PRE-COMMIT
+###############################################################################
 
-_clean_manual_test:
-	rm -rf manual_test
+## Run pre-commit on all files
+precommit-all:
+	pre-commit run --all-files
 
-manual-test: _prep _clean_manual_test
-	mkdir -p manual_test
-	cd manual_test && python -m ccds ..
-
-manual-test-debug: _prep _clean_manual_test
-	mkdir -p manual_test
-	cd manual_test && python -m pdb ../ccds/__main__.py ..
+## Update pre-commit hooks
+precommit-update:
+	pre-commit autoupdate
