@@ -46,20 +46,20 @@ code_quality:
     # Code formatting check
     - echo "🎨 Checking code formatting with Black..."
     - black --check src/ scripts/ || (echo "❌ Code not formatted. Run 'black src/ scripts/'" && exit 1)
-
+    
     # Linting
     - echo "🔍 Running flake8 linting..."
     - flake8 src/ scripts/ --max-line-length=100 --ignore=E203,W503 || true
-
+    
     # Type checking
     - echo "📝 Running mypy type checking..."
     - mypy src/ scripts/ --ignore-missing-imports || true
-
+    
     # Security scan
     - echo "🔒 Running security checks..."
     - bandit -r src/ -ll || true
     - safety check --json || true
-
+    
     - echo "✅ Code quality checks completed"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -79,13 +79,13 @@ data_validation:
     - pip install great-expectations
   script:
     - echo "📊 Validating data quality..."
-
+    
     # Pull latest data from DVC
     - dvc pull || echo "⚠️ DVC pull failed, using local data"
-
+    
     # Run data validation
     - python scripts/data_validation.py --data-path data/processed/iris.csv
-
+    
     - echo "✅ Data validation completed"
   artifacts:
     reports:
@@ -115,14 +115,14 @@ train_challenger:
     - source activate mlops
   script:
     - echo "🚀 Training challenger model..."
-
+    
     # Pull latest data
     - dvc pull
-
+    
     # Start MLflow server in background (if not using service)
     # - mlflow server --host 0.0.0.0 --port 5001 &
     # - sleep 5
-
+    
     # Train model with challenger tag
     - |
       python src/train.py \
@@ -136,10 +136,10 @@ train_challenger:
         --experiment-name iris-classification-ci \
         --model-name iris-classifier-ci \
         --strict-git false
-
+    
     # Tag the run as challenger
     - python scripts/tag_challenger.py
-
+    
     - echo "✅ Challenger model trained"
   artifacts:
     paths:
@@ -164,19 +164,19 @@ evaluate_models:
     - pip install cml
   script:
     - echo "📊 Comparing challenger vs champion..."
-
+    
     # Compare models
     - python scripts/compare_models.py --experiment-name iris-classification-ci --output comparison_report.json
-
+    
     # Generate CML report
     - python scripts/generate_cml_report.py --comparison comparison_report.json --output cml_report.md
-
+    
     # Post CML report to commit/MR
     - |
       if [ -f cml_report.md ]; then
         cml comment create cml_report.md
       fi
-
+    
     # Decision: Auto-promote if challenger is better
     - |
       PROMOTE=$(python -c "
@@ -185,7 +185,7 @@ evaluate_models:
           report = json.load(f)
       print('yes' if report.get('promote_challenger', False) else 'no')
       ")
-
+      
       if [ "$PROMOTE" == "yes" ]; then
         echo "✅ Challenger outperforms champion - will promote"
         echo "PROMOTE_MODEL=true" >> promote.env
@@ -193,7 +193,7 @@ evaluate_models:
         echo "⚠️ Challenger does not outperform champion - keeping current"
         echo "PROMOTE_MODEL=false" >> promote.env
       fi
-
+    
   artifacts:
     paths:
       - comparison_report.json
@@ -219,13 +219,13 @@ promote_model:
     - source activate mlops
   script:
     - echo "🏆 Promoting challenger to champion..."
-
+    
     # Promote model in MLflow
     - python scripts/promote_model.py --experiment-name iris-classification-ci
-
+    
     # Save model version info
     - python scripts/get_model_version.py --output model_version.env
-
+    
     - echo "✅ Model promoted successfully"
   artifacts:
     reports:
@@ -235,10 +235,10 @@ promote_model:
     - if: '$PROMOTE_MODEL == "true"'
 
 # =============================================================================
-# STAGE 6: BUILD & PUSH DOCKER IMAGE
+# STAGE 6: BUILD & PUSH DOCKER IMAGE (RAY SERVE)
 # =============================================================================
 
-build_docker:
+build_ray_serve_image:
   stage: deploy
   image: docker:24
   services:
@@ -247,32 +247,75 @@ build_docker:
   before_script:
     - docker login -u $DOCKER_HUB_USERNAME -p $DOCKER_HUB_TOKEN
   script:
-    - echo "🐳 Building Docker image..."
-
+    - echo "🐳 Building Ray Serve Docker image..."
+    
     # Get model version from artifacts
     - export MODEL_VERSION=${MODEL_VERSION:-latest}
-
-    # Build multi-arch image
+    
+    # Build Ray Serve image
     - |
       docker build \
+        -f deployment/Dockerfile.ray \
         --build-arg MODEL_VERSION=$MODEL_VERSION \
-        -t ${DOCKER_IMAGE_NAME}:${MODEL_VERSION} \
-        -t ${DOCKER_IMAGE_NAME}:latest \
-        -t ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA} \
+        --build-arg MODEL_NAME=$MODEL_NAME \
+        -t ${DOCKER_IMAGE_NAME}-ray:${MODEL_VERSION} \
+        -t ${DOCKER_IMAGE_NAME}-ray:latest \
+        -t ${DOCKER_IMAGE_NAME}-ray:${CI_COMMIT_SHORT_SHA} \
         .
-
+    
     # Push all tags
-    - docker push ${DOCKER_IMAGE_NAME}:${MODEL_VERSION}
-    - docker push ${DOCKER_IMAGE_NAME}:latest
-    - docker push ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}
-
-    - echo "✅ Docker image pushed successfully"
+    - docker push ${DOCKER_IMAGE_NAME}-ray:${MODEL_VERSION}
+    - docker push ${DOCKER_IMAGE_NAME}-ray:latest
+    - docker push ${DOCKER_IMAGE_NAME}-ray:${CI_COMMIT_SHORT_SHA}
+    
+    - echo "✅ Ray Serve image pushed successfully"
     - echo "📦 Images:"
-    - echo "   - ${DOCKER_IMAGE_NAME}:${MODEL_VERSION}"
-    - echo "   - ${DOCKER_IMAGE_NAME}:latest"
-    - echo "   - ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}"
+    - echo "   - ${DOCKER_IMAGE_NAME}-ray:${MODEL_VERSION}"
+    - echo "   - ${DOCKER_IMAGE_NAME}-ray:latest"
+    - echo "   - ${DOCKER_IMAGE_NAME}-ray:${CI_COMMIT_SHORT_SHA}"
+  artifacts:
+    reports:
+      dotenv: deployment_info.env
   rules:
     - if: '$PROMOTE_MODEL == "true" && $CI_COMMIT_BRANCH == "main"'
+
+# =============================================================================
+# STAGE 6b: TEST DEPLOYMENT (OPTIONAL)
+# =============================================================================
+
+test_deployment:
+  stage: deploy
+  image: continuumio/miniconda3:latest
+  needs: ["build_ray_serve_image"]
+  before_script:
+    - conda env create -f environment.yml -n mlops || conda env update -f environment.yml -n mlops
+    - source activate mlops
+    - pip install ray[serve]
+  script:
+    - echo "🧪 Testing Ray Serve deployment..."
+    
+    # Start Ray Serve
+    - python src/deployment/ray_serve.py deploy &
+    - SERVE_PID=$!
+    - sleep 30  # Wait for startup
+    
+    # Test health endpoint
+    - curl -f http://localhost:8000/health || exit 1
+    
+    # Test prediction endpoint
+    - |
+      curl -X POST http://localhost:8000/predict \
+        -H "Content-Type: application/json" \
+        -d '{"features": [[5.1, 3.5, 1.4, 0.2]]}' \
+        | grep -q "predictions" || exit 1
+    
+    # Cleanup
+    - kill $SERVE_PID || true
+    
+    - echo "✅ Deployment test passed"
+  rules:
+    - if: '$PROMOTE_MODEL == "true" && $CI_COMMIT_BRANCH == "main"'
+  allow_failure: true
 
 # =============================================================================
 # STAGE 7: CREATE RELEASE
@@ -286,41 +329,41 @@ create_release:
     - apk add --no-cache git curl jq
   script:
     - echo "🏷️ Creating release..."
-
+    
     # Get model version
     - export MODEL_VERSION=${MODEL_VERSION:-v1.0.0}
-
+    
     # Create git tag
     - git config user.email "ci@gitlab.com"
     - git config user.name "GitLab CI"
     - git tag -a ${MODEL_VERSION} -m "Release ${MODEL_VERSION} - Model promoted"
     - git push origin ${MODEL_VERSION} || echo "Tag already exists"
-
+    
     # Generate release notes
     - |
       cat > RELEASE_NOTES.md << EOF
       # Release ${MODEL_VERSION}
-
+      
       ## Model Performance
       - Test Accuracy: ${TEST_ACCURACY}
       - Model Type: XGBoost Classifier
-
+      
       ## Docker Image
       \`\`\`
       docker pull ${DOCKER_IMAGE_NAME}:${MODEL_VERSION}
       \`\`\`
-
+      
       ## Commit
       - SHA: ${CI_COMMIT_SHORT_SHA}
       - Branch: ${CI_COMMIT_BRANCH}
       - Author: ${GITLAB_USER_NAME}
-
+      
       ## Changes
       ${CI_COMMIT_MESSAGE}
       EOF
-
+    
     - cat RELEASE_NOTES.md
-
+    
     - echo "✅ Release created: ${MODEL_VERSION}"
   artifacts:
     paths:

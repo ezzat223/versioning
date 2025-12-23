@@ -116,7 +116,7 @@ class DeploymentManager:
         print("📊 Setting up Ray Batch Inference...")
 
         try:
-            from src.deployment.ray_batch_inference import RayBatchInference
+            from src.deployment.ray_batch import RayBatchInference
 
             pipeline = RayBatchInference(
                 model_name=self.model_name,

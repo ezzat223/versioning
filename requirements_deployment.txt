@@ -1,0 +1,80 @@
+# =============================================================================
+# Deployment Requirements - RAY ONLY
+# =============================================================================
+# Simplified to use only Ray for both online and batch inference
+# Install: pip install -r requirements_deployment.txt
+# =============================================================================
+
+# Core dependencies (already in environment.yml)
+mlflow==2.10.0
+pandas==2.1.3
+scikit-learn==1.3.2
+xgboost==2.0.3
+numpy==1.26.2
+
+# =============================================================================
+# Ray (Serve + Data)
+# =============================================================================
+# Ray Serve for online inference
+# Ray Data for batch inference
+ray[default,serve,data]==2.9.0
+
+# Required for Ray Serve
+aiohttp==3.9.1
+pydantic==2.5.0
+starlette==0.27.0
+
+# Optional: GPU support
+# Add to environment.yml: cudatoolkit=11.8
+
+# =============================================================================
+# Monitoring & Observability
+# =============================================================================
+# Prometheus metrics (built into Ray)
+prometheus-client==0.19.0
+
+# Logging
+python-json-logger==2.0.7
+
+# =============================================================================
+# Load Testing
+# =============================================================================
+locust==2.20.0  # For load testing deployments
+
+# =============================================================================
+# Utilities
+# =============================================================================
+# Progress bars
+tqdm==4.66.1
+
+# Configuration
+pyyaml==6.0.1
+python-dotenv==1.0.0
+
+# HTTP requests (for testing)
+requests==2.31.0
+
+# =============================================================================
+# Cloud Storage (optional - for batch inference on cloud data)
+# =============================================================================
+# AWS S3
+# boto3==1.34.0
+# s3fs==2024.2.0
+
+# GCP
+# gcsfs==2024.2.0
+
+# Azure
+# adlfs==2024.2.0
+
+# =============================================================================
+# Development
+# =============================================================================
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+
+# Code quality
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.0
