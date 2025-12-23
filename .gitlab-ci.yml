@@ -38,17 +38,17 @@ generate_repo:
   stage: generate
   image: python:3.11-slim
   before_script:
-  - pip install jinja2
+    - pip install jinja2
   script:
-  - echo "🏗️ Generating new MLOps project..."
-  - mkdir -p generated_projects
-  - python scripts/scaffold_project.py --name ${PROJECT_NAME} --task-type ${TASK_TYPE} --data-type ${DATA_TYPE} --deployment ${DEPLOYMENT} --output-dir generated_projects
-  - cd generated_projects
-  - tar -czf ${PROJECT_NAME}.tar.gz ${PROJECT_NAME}
-  - |
-    echo "✅ Project generated: ${PROJECT_NAME}.tar.gz"
+    - echo "🏗️ Generating new MLOps project..."
+    - mkdir -p generated_projects
+    - python scripts/scaffold_project.py --name ${PROJECT_NAME} --task-type ${TASK_TYPE} --data-type ${DATA_TYPE} --deployment ${DEPLOYMENT} --output-dir generated_projects
+    - cd generated_projects
+    - tar -czf ${PROJECT_NAME}.tar.gz ${PROJECT_NAME}
+    - |
+      echo "✅ Project generated: ${PROJECT_NAME}.tar.gz"
   artifacts:
     paths:
-    - generated_projects/*.tar.gz
+      - generated_projects/*.tar.gz
     expire_in: 1 week
   when: manual
