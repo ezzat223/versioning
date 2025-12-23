@@ -47,7 +47,6 @@ generate_repo:
   - tar -czf ${PROJECT_NAME}.tar.gz ${PROJECT_NAME}
   - |
     echo "✅ Project generated: ${PROJECT_NAME}.tar.gz"
-  - ls -lh generated_projects/${PROJECT_NAME}.tar.gz
   artifacts:
     paths:
     - generated_projects/*.tar.gz
