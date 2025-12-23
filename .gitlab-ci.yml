@@ -5,19 +5,40 @@
 # The generated projects will have their own full CI/CD pipelines.
 # =============================================================================
 
+variables:
+  PROJECT_NAME:
+    value: "new-mlops-project"
+    description: "Name of the new project (no spaces)"
+  TASK_TYPE:
+    value: "supervised"
+    options:
+    - "supervised"
+    - "unsupervised"
+    description: "Machine learning task type"
+  DATA_TYPE:
+    value: "tabular"
+    options:
+    - "tabular"
+    - "image"
+    - "database"
+    description: "Primary data type"
+  DEPLOYMENT:
+    value: "all"
+    options:
+    - "all"
+    - "ray-serve"
+    - "ray-batch"
+    - "none"
+    description: "Deployment target infrastructure"
+
 stages:
 - generate
 
 generate_repo:
   stage: generate
   image: python:3.11-slim
-  variables:
-    PROJECT_NAME: "new-mlops-project"
-    TASK_TYPE: "supervised" # supervised, unsupervised
-    DATA_TYPE: "tabular"    # tabular, image, database
-    DEPLOYMENT: "all"       # ray-serve, ray-batch, all, none
   before_script:
-    - pip install jinja2
+  - pip install jinja2
   script:
   - echo "🏗️ Generating new MLOps project..."
   - mkdir -p generated_projects
