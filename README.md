@@ -1,177 +1,132 @@
-# MLOps Template for Classical Machine Learning
+# Meta-MLOps Project Generator
 
-A production-ready, generalized MLOps template for classical machine learning workflows (Supervised & Unsupervised).
-This template integrates best practices for version control, experimentation tracking, and deployment.
+A production-ready **MLOps Project Generator** that scaffolds tailored machine learning repositories based on user specifications. This system acts as a "Cookiecutter on Steroids," allowing data scientists to generate fully configured MLOps projects with built-in best practices for version control, experimentation, and deployment.
 
-## Core Components
+## 🚀 Features
 
-1.  **Version Control**:
+- **Dynamic Scaffolding**: Generates projects tailored to specific needs:
+  - **Task Type**: Supervised (Classification/Regression) or Unsupervised (Clustering).
+  - **Data Type**: Tabular, Image, or Database.
+  - **Deployment**: Ray Serve (Online), Ray Data (Batch), or None.
+- **Production-Ready Components**:
+  - **Git + DVC**: Pre-configured for code and data versioning.
+  - **MLflow**: Integrated experimentation tracking.
+  - **CI/CD**: Auto-generated GitLab CI/CD pipelines that run only on Pull Requests/Merges.
+  - **Code Quality**: Pre-commit hooks (Black, Flake8, Mypy, Bandit).
+- **Automated Setup**: Includes a unified `setup.sh` script to bootstrap the environment in seconds.
 
-    - **Git**: Code versioning.
-    - **DVC**: Data versioning with Git pre-hooks.
-    - **Reproducibility**: Complete pipeline reproducibility through git commit hashes.
+---
 
-2.  **Experimentation Tracking**:
+## 🏗 Architecture
 
-    - **MLflow**: Experiment tracking, model registry, dataset versioning.
-    - **Advanced Aliasing**: Challenger/Champion model promotion.
+This repository operates as a **Generator** (Meta-MLOps). It does not contain the active model code itself but rather the _templates_ and _logic_ to create them.
 
-3.  **Data Loading**:
-
-    - Modular loaders for Tabular, Image, and Database sources.
-    - Located in `src/data_loaders/`.
-
-4.  **Training Scripts**:
-
-    - Standalone, explicit training scripts derived from templates.
-    - Located in `training/` (active script) and `templates/` (reference templates).
-
-5.  **Deployment**:
-
-    - **Ray Serve**: Online inference.
-    - **Ray Data**: Batch prediction.
-    - Located in `src/deployment/`.
-
-6.  **CI/CD**:
-    - GitLab CI/CD integration (`.gitlab-ci.yml`).
-    - Pre-commit hooks for code quality and DVC.
-
-## Directory Structure
-
-```
-├── .dvc/                   # DVC configuration
-├── .github/                # GitHub Actions (if applicable)
-├── .gitlab-ci.yml          # GitLab CI/CD pipeline
-├── .pre-commit-config.yaml # Pre-commit hooks
-├── dvc.yaml                # DVC pipeline stages
-├── params.yaml             # DVC/MLflow parameters
-├── training/               # Active training scripts
-│   └── train.py            # Main training entry point
-├── templates/              # Reference templates (Supervised, Unsupervised, Tuning)
-├── src/
-│   ├── data_loaders/       # Data loading modules
-│   ├── deployment/         # Ray Serve/Data deployment
-│   └── utils.py            # General utilities
-├── scripts/                # CI/CD and helper scripts
-└── data/                   # Data directory (DVC tracked)
+```mermaid
+graph LR
+    A[User Inputs] --> B(Generator Script)
+    B --> C{Templates}
+    C --> D[Generated MLOps Repo]
+    D --> E[CI/CD Pipeline]
+    D --> F[Training & Deployment]
 ```
 
-## Setup
+### Repository Structure
 
-1.  **Install Dependencies**:
+```
+├── scripts/
+│   └── scaffold_project.py   # The core generator logic (Jinja2-based)
+├── templates/                # Jinja2 templates for the generated project
+│   ├── dvc.yaml.template     # DVC pipeline template
+│   ├── params.yaml.template  # Parameter configuration template
+│   ├── gitlab-ci.yml.template# CI/CD pipeline template
+│   ├── train_supervised.py   # Training script templates
+│   └── setup.sh              # Unified setup script
+├── src/                      # Source code components (Data Loaders, Deployment)
+│   ├── data_loaders/         # Modular data loaders to be copied
+│   └── deployment/           # Deployment logic to be copied
+└── requirements.txt          # Dependencies for the GENERATOR itself
+```
+
+---
+
+## 🛠 Installation & Usage
+
+### Prerequisites
+
+- **Python 3.11+**
+- **Conda** (Miniconda or Anaconda)
+- **Git**
+
+### Option 1: Local Generation (CLI)
+
+1.  **Clone the Generator Repository**:
 
     ```bash
-    pip install -r requirements.txt
+    git clone <generator-repo-url>
+    cd meta-mlops-generator
     ```
 
-2.  **Initialize Pre-commit Hooks**:
+2.  **Install Dependencies**:
 
     ```bash
-    pre-commit install
+    pip install jinja2
     ```
 
-3.  **Configure DVC**:
+3.  **Run the Scaffolder**:
+    Use the `scaffold_project.py` script to generate a new project.
+
     ```bash
-    dvc init
-    # Configure remote storage...
+    python scripts/scaffold_project.py \
+      --name my-churn-model \
+      --task-type supervised \
+      --data-type tabular \
+      --deployment ray-serve \
+      --output-dir ../projects
     ```
 
-## Usage
+    **Arguments**:
 
-### 1. Training (Supervised)
+    - `--name`: Name of the new project (Required).
+    - `--task-type`: `supervised` (default) or `unsupervised`.
+    - `--data-type`: `tabular` (default), `image`, or `database`.
+    - `--deployment`: `ray-serve`, `ray-batch`, `all`, or `none`.
+    - `--output-dir`: Directory where the new project will be created.
 
-You can run training directly using the script:
+4.  **Initialize the New Project**:
+    Navigate to the created directory and run the setup script.
+    ```bash
+    cd ../projects/my-churn-model
+    ./setup.sh
+    ```
+    _This will create the conda environment, install dependencies, and configure Git/DVC hooks._
 
-```bash
-python training/train.py \
-    --data-path data/processed/dataset.csv \
-    --target-column target \
-    --experiment-name my-experiment
-```
+### Option 2: CI/CD Generation (GitLab)
 
-Or via DVC:
+This repository includes a **Project Generator Pipeline** that can be triggered manually from GitLab.
 
-```bash
-dvc repro train_supervised
-```
-
-### 2. Customizing Training
-
-To change the model or logic, edit `training/train.py`.
-You can also use other templates from `templates/` as a starting point:
-
-- `templates/train_unsupervised.py`
-- `templates/hyperparam_tuning.py`
-
-### 3. Deployment
-
-**Online Inference (Ray Serve)**:
-
-```bash
-python src/deployment/manager.py --type ray-serve-online
-```
-
-**Batch Inference (Ray Data)**:
-
-```bash
-python src/deployment/manager.py --type ray-batch --input data/new_data.csv --output data/predictions.csv
-```
-
-## CI/CD Pipeline
-
-The `.gitlab-ci.yml` file defines the following stages:
-
-1.  **Quality**: Code formatting, linting, security checks.
-2.  **Validate**: Data validation.
-3.  **Train**: Train challenger model.
-4.  **Evaluate**: Compare challenger vs champion.
-5.  **Deploy**: Build and push Docker images.
-6.  **Release**: Tag and release.
-7.  **Generate**: Generate new projects (Meta-MLOps).
-
-## Project Generator (Meta-MLOps)
-
-This repository includes a **Project Scaffolding Tool** that allows you to generate new, customized MLOps projects based on this template.
-
-### How to Generate a New Project
-
-**Option 1: Via GitLab CI/CD (Recommended)**
-
-1.  Go to **Build** > **Pipelines**.
+1.  Go to **Build > Pipelines** in GitLab.
 2.  Click **Run pipeline**.
 3.  Set the following variables:
-    - `PROJECT_NAME`: Name of the new project (e.g., `churn-prediction`).
+    - `PROJECT_NAME`: Your desired project name.
     - `TASK_TYPE`: `supervised` or `unsupervised`.
     - `DATA_TYPE`: `tabular`, `image`, or `database`.
-    - `DEPLOYMENT`: `all`, `ray-serve`, `ray-batch`, or `none`.
+    - `DEPLOYMENT`: `ray-serve`, `ray-batch`, or `all`.
 4.  Run the pipeline.
-5.  When the `generate_repo` job completes, download the `artifacts.zip`.
-6.  Extract it to start your new project!
+5.  Download the **Artifacts** from the completed job to get your `.tar.gz` project archive.
 
-**Option 2: Via CLI (Local)**
-You can run the generator script locally:
+---
 
-```bash
-python scripts/scaffold_project.py \
-    --name my-new-project \
-    --task-type supervised \
-    --data-type tabular \
-    --deployment all \
-    --output-dir ../
-```
+## 🧩 Customization
 
-### What it Generates
+To modify the structure of _future_ generated projects, edit the files in the `templates/` directory:
 
-The tool creates a clean repository containing ONLY the components you need:
+- **`templates/dvc.yaml.template`**: Edit the DVC pipeline stages.
+- **`templates/params.yaml.template`**: Add new hyperparameters or configuration sections.
+- **`templates/gitlab-ci.yml.template`**: Update the CI/CD pipeline definition (e.g., change runner tags or docker images).
+- **`src/`**: Add new data loaders or utility functions that should be copied to every new project.
 
-- **Tailored Training Script**: Pre-configured for your task type.
-- **Specific Data Loader**: Only the loader you selected.
-- **Deployment Configs**: Ray Serve/Batch files if requested.
-- **CI/CD Pipeline**: customized `.gitlab-ci.yml`.
-- **DVC & Params**: Configured `dvc.yaml` and `params.yaml`.
+---
 
-## Customization
+## 📝 License
 
-- **Models**: Edit `training/train.py` directly.
-- **Data**: Add new loaders in `src/data_loaders/`.
-- **Pipeline**: Modify `dvc.yaml` to add new stages or parameters.
+[Insert License Here]
