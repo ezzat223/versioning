@@ -12,13 +12,14 @@
 #   dvc repro -f                 # Force re-run even if nothing changed
 #
 # =============================================================================
-# SUPERVISED LEARNING PIPELINE
+# PIPELINE CONFIGURATION
 # =============================================================================
 
 stages:
+{% if task_type == 'supervised' %}
   train_supervised:
     cmd: >
-      python src/train.py
+      python training/train.py
       --data-path ${data.path}
       --target-column ${supervised.target_column}
       --test-size ${data.test_size}
@@ -30,7 +31,7 @@ stages:
       --model-name ${mlflow.model_name}
       --strict-git false
     deps:
-      - src/train.py
+      - training/train.py
       - src/data_loaders/
       - src/utils.py
       - ${data.path}
@@ -47,265 +48,29 @@ stages:
     metrics:
       - metrics.json:
           cache: false
-    # Note: Models are NOT tracked here - they're in MLflow Model Registry
+{% endif %}
 
-
-# =============================================================================
-# UNSUPERVISED LEARNING PIPELINE (Uncomment if needed)
-# =============================================================================
-
-# stages:
-#   train_unsupervised:
-#     cmd: >
-#       python src/train_unsupervised.py
-#       --data-path ${data.path}
-#       --n-clusters ${unsupervised.model.n_clusters}
-#       --random-state ${data.random_state}
-#       --experiment-name ${mlflow.experiment_name}
-#       --model-name ${mlflow.model_name}
-#     deps:
-#       - src/train_unsupervised.py
-#       - src/data_loaders/
-#       - src/utils.py
-#       - ${data.path}
-#     params:
-#       - data.path
-#       - data.random_state
-#       - unsupervised.model.n_clusters
-#       - mlflow.experiment_name
-#       - mlflow.model_name
-#     metrics:
-#       - metrics.json:
-#           cache: false
-
-
-# =============================================================================
-# RUNNING EXPERIMENTS - MULTIPLE APPROACHES
-# =============================================================================
-#
-# APPROACH 1: QUEUE MULTIPLE EXPERIMENTS (Recommended for Hyperparameter Tuning)
-# ------------------------------------------------------------------------------
-# DVC has a built-in experiment queue system. This is the BEST way to run
-# multiple experiments with different parameters.
-#
-# Step 1: Queue experiments with different parameters
-#   dvc exp run --queue -S supervised.model.n_estimators=50
-#   dvc exp run --queue -S supervised.model.n_estimators=100
-#   dvc exp run --queue -S supervised.model.n_estimators=200
-#   dvc exp run --queue -S supervised.model.max_depth=5
-#   dvc exp run --queue -S supervised.model.max_depth=10
-#   dvc exp run --queue -S supervised.model.max_depth=15
-#
-# Step 2: Run all queued experiments
-#   dvc queue start
-#
-# Step 3: View results
-#   dvc exp show
-#   dvc exp show --no-pager | head -20
-#
-# GRID SEARCH EXAMPLE:
-#   # Queue all combinations
-#   for n_est in 50 100 200; do
-#     for max_d in 5 10 15; do
-#       dvc exp run --queue -S supervised.model.n_estimators=$n_est -S supervised.model.max_depth=$max_d
-#     done
-#   done
-#   
-#   # Run all at once
-#   dvc queue start
-#   
-#   # Or run in parallel (4 jobs)
-#   dvc queue start --jobs 4
-#
-#
-# APPROACH 2: RUN WITH COMMAND LINE ARGUMENTS (Override params.yaml)
-# ------------------------------------------------------------------------------
-# Override parameters from command line without editing params.yaml
-#
-# Single parameter override:
-#   dvc exp run -S supervised.model.n_estimators=150
-#
-# Multiple parameter overrides:
-#   dvc exp run -S supervised.model.n_estimators=150 -S supervised.model.max_depth=20
-#
-# Give experiment a name:
-#   dvc exp run -n "experiment-high-estimators" -S supervised.model.n_estimators=300
-#
-# Force re-run (ignore cache):
-#   dvc exp run -f -S supervised.model.n_estimators=150
-#
-#
-# APPROACH 3: DIRECT PYTHON EXECUTION (Bypass DVC)
-# ------------------------------------------------------------------------------
-# Run Python directly for quick testing (won't be tracked by DVC)
-#
-#   python src/train.py \
-#     --data-path data/processed/iris.csv \
-#     --target-column target \
-#     --n-estimators 150 \
-#     --max-depth 20 \
-#     --experiment-name my-quick-test
-#
-#
-# APPROACH 4: BATCH EXPERIMENTS WITH SHELL SCRIPT
-# ------------------------------------------------------------------------------
-# Create a shell script for complex experiment workflows
-#
-# experiments.sh:
-#   #!/bin/bash
-#   for lr in 0.01 0.1 1.0; do
-#     for depth in 5 10 15; do
-#       dvc exp run --queue \
-#         -S supervised.model.learning_rate=$lr \
-#         -S supervised.model.max_depth=$depth \
-#         -n "lr${lr}-depth${depth}"
-#     done
-#   done
-#   dvc queue start --jobs 4
-#
-# Then run: chmod +x experiments.sh && ./experiments.sh
-#
-#
-# =============================================================================
-# EXPERIMENT MANAGEMENT COMMANDS
-# =============================================================================
-#
-# QUEUE MANAGEMENT:
-#   dvc queue start                # Run all queued experiments
-#   dvc queue start --jobs 4       # Run 4 experiments in parallel
-#   dvc queue logs                 # View logs from queued experiments
-#   dvc queue remove --all         # Clear the queue
-#   dvc queue status               # Check queue status
-#
-# VIEWING EXPERIMENTS:
-#   dvc exp show                   # Show all experiments in table
-#   dvc exp show --no-pager        # Show without pager (better for piping)
-#   dvc exp show --only-changed    # Show only changed metrics/params
-#   dvc exp show --include-params  # Include all parameters
-#   dvc exp diff                   # Compare current vs baseline
-#   dvc exp diff exp-name          # Compare specific experiment
-#
-# MANAGING EXPERIMENTS:
-#   dvc exp apply exp-name         # Apply experiment to workspace
-#   dvc exp branch exp-name my-branch  # Convert experiment to git branch
-#   dvc exp remove exp-name        # Delete experiment
-#   dvc exp gc --workspace         # Clean up old experiments
-#
-# COMPARING EXPERIMENTS:
-#   dvc plots diff                 # Compare plots across experiments
-#   dvc metrics diff               # Compare metrics across experiments
-#   dvc params diff                # Compare parameters across experiments
-#
-#
-# =============================================================================
-# TYPICAL WORKFLOWS
-# =============================================================================
-#
-# WORKFLOW 1: QUICK SINGLE EXPERIMENT
-#   # Override one parameter and run
-#   dvc exp run -S supervised.model.n_estimators=200
-#   
-#   # View result
-#   dvc exp show
-#
-#
-# WORKFLOW 2: HYPERPARAMETER GRID SEARCH
-#   # Queue all combinations
-#   for n in 50 100 150 200; do
-#     for d in 5 10 15 20; do
-#       dvc exp run --queue -S supervised.model.n_estimators=$n -S supervised.model.max_depth=$d
-#     done
-#   done
-#   
-#   # Run all (or run in parallel with --jobs)
-#   dvc queue start --jobs 4
-#   
-#   # Find best experiment
-#   dvc exp show --sort-by test_accuracy --sort-order desc
-#   
-#   # Apply best experiment to workspace
-#   dvc exp apply best-exp-name
-#   
-#   # Commit it
-#   git add params.yaml dvc.lock metrics.json
-#   git commit -m "Best model: n_estimators=150, max_depth=10, accuracy=0.95"
-#
-#
-# WORKFLOW 3: INCREMENTAL EXPERIMENTATION
-#   # Try different values iteratively
-#   dvc exp run -n "baseline" 
-#   dvc exp run -n "more-trees" -S supervised.model.n_estimators=200
-#   dvc exp run -n "deeper-trees" -S supervised.model.max_depth=20
-#   
-#   # Compare all
-#   dvc exp show
-#   
-#   # Pick winner and apply
-#   dvc exp apply more-trees
-#
-#
-# WORKFLOW 4: COMPARING WITH BASELINE
-#   # Run new experiment
-#   dvc exp run -n "new-approach" -S supervised.model.n_estimators=300
-#   
-#   # Compare with current main branch
-#   dvc exp diff
-#   
-#   # If better, apply and commit
-#   dvc exp apply new-approach
-#   git add params.yaml dvc.lock metrics.json
-#   git commit -m "Improved accuracy by 2% with 300 estimators"
-#
-# =============================================================================
-# BEST PRACTICES
-# =============================================================================
-#
-# 1. ALWAYS ACTIVATE YOUR CONDA ENVIRONMENT FIRST
-#    conda activate your-env-name
-#    # Then run dvc commands
-#
-# 2. USE EXPERIMENT QUEUE FOR MULTIPLE RUNS
-#    # Better than running sequentially
-#    dvc exp run --queue -S param1=value1
-#    dvc exp run --queue -S param2=value2
-#    dvc queue start --jobs 4  # Parallel execution
-#
-# 3. NAME YOUR EXPERIMENTS
-#    dvc exp run -n "descriptive-name" -S param=value
-#
-# 4. COMMIT WINNING EXPERIMENTS
-#    dvc exp apply best-exp
-#    git add params.yaml dvc.lock metrics.json
-#    git commit -m "Best model: accuracy=0.95"
-#
-# =============================================================================
-# COMMON DVC COMMANDS QUICK REFERENCE
-# =============================================================================
-#
-# BASIC PIPELINE:
-#   dvc repro                      # Run pipeline with params.yaml values
-#   dvc repro -f                   # Force re-run (ignore cache)
-#   dvc dag                        # Show pipeline DAG
-#   dvc status                     # Check for changes
-#
-# EXPERIMENTS:
-#   dvc exp run                    # Run experiment (same as dvc repro)
-#   dvc exp run -S param=value     # Override parameter
-#   dvc exp run -n "name"          # Name your experiment
-#   dvc exp show                   # Show all experiments
-#   dvc exp diff                   # Compare with baseline
-#
-# QUEUE:
-#   dvc exp run --queue            # Add to queue
-#   dvc queue start                # Run queue
-#   dvc queue start --jobs 4       # Parallel execution
-#
-# METRICS & PARAMS:
-#   dvc metrics show               # Show current metrics
-#   dvc metrics diff               # Compare metrics across commits
-#   dvc params diff                # Compare parameters across commits
-#
-# DATA MANAGEMENT:
-#   dvc push                       # Push data to remote storage
-#   dvc pull                       # Pull data from remote storage
-#   dvc fetch                      # Download data without checkout
+{% if task_type == 'unsupervised' %}
+  train_unsupervised:
+    cmd: >
+      python training/train.py
+      --data-path ${data.path}
+      --n-clusters ${unsupervised.model.n_clusters}
+      --random-state ${data.random_state}
+      --experiment-name ${mlflow.experiment_name}
+      --model-name ${mlflow.model_name}
+    deps:
+      - training/train.py
+      - src/data_loaders/
+      - src/utils.py
+      - ${data.path}
+    params:
+      - data.path
+      - data.random_state
+      - unsupervised.model.n_clusters
+      - mlflow.experiment_name
+      - mlflow.model_name
+    metrics:
+      - metrics.json:
+          cache: false
+{% endif %}

@@ -32,10 +32,11 @@ logger = logging.getLogger(__name__)
 # Configuration
 # =============================================================================
 
-MODEL_NAME = os.getenv("MODEL_NAME", "iris-classifier")
+MODEL_NAME = os.getenv("MODEL_NAME", "template-model")
 MODEL_VERSION = os.getenv("MODEL_VERSION", "latest")
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1000"))
+EXPERIMENT_NAME = os.getenv("EXPERIMENT_NAME", "template-experiment")
 
 
 # =============================================================================
@@ -54,12 +55,10 @@ def get_champion_model_uri() -> str:
     
     try:
         # Search for champion model
-        experiment = mlflow.get_experiment_by_name(f"{MODEL_NAME.replace('-', '_')}-ci")
-        if not experiment:
-            experiment = mlflow.get_experiment_by_name(MODEL_NAME.replace("-", "_"))
+        experiment = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
         
         if not experiment:
-            raise ValueError(f"No experiment found for {MODEL_NAME}")
+            raise ValueError(f"No experiment found for {EXPERIMENT_NAME}")
         
         # Get champion run
         runs = client.search_runs(

@@ -1,17 +1,17 @@
 # =============================================================================
-# DATA CONFIGURATION (Common for all tasks)
+# DATA CONFIGURATION
 # =============================================================================
 data:
-  path: "data/processed/iris.csv"
+  path: "data/processed/dataset.csv"  # Generic name
   test_size: 0.2
   validation_size: 0.1
   random_state: 42
 
 # =============================================================================
-# SUPERVISED LEARNING (Uncomment if using supervised template)
+# SUPERVISED LEARNING
 # =============================================================================
 supervised:
-  target_column: "target"
+  target_column: "target"  # Generic target
   model:
     type: "random_forest"
     n_estimators: 100
@@ -21,35 +21,6 @@ supervised:
 # MLFLOW CONFIGURATION
 # =============================================================================
 mlflow:
-  experiment_name: "iris-classification-4"
-  model_name: "iris-classifier-4"
+  experiment_name: "template-experiment"
+  model_name: "template-model"
   tracking_uri: "http://localhost:5001"
-
-
-# =============================================================================
-# NOTES FOR DATA SCIENTISTS:
-# =============================================================================
-# This file is TRACKED by git, so:
-# - Changes to these params will trigger DVC pipeline re-runs
-# - Good for production/baseline configurations
-# - For experiments, use MLflow Projects CLI overrides instead
-
-# 1. PRODUCTION CONFIGS:
-#    - Put baseline/production hyperparameters here
-#    - These are tracked in git
-#    - Changes trigger DVC pipeline re-runs
-#
-# 2. EXPERIMENTATION:
-#    - Use MLflow Projects CLI to override params
-#    - Example: mlflow run . -P learning_rate=0.01
-#    - No git commits needed for experiments!
-#
-# 3. ACCESSING IN CODE:
-#    - These params are passed as command-line arguments
-#    - Configured in MLproject file
-#    - Access via argparse in your training script
-#
-# 4. DVC INTEGRATION:
-#    - Run: dvc repro
-#    - DVC will re-run pipeline if params changed
-#    - Automatic dependency tracking

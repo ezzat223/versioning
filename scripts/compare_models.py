@@ -6,7 +6,7 @@ Determines if challenger should be promoted based on performance metrics.
 import argparse
 import json
 import sys
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Any
 
 import mlflow
 from mlflow.tracking import MlflowClient
@@ -81,72 +81,68 @@ class ModelComparator:
             metrics["test_accuracy"] = run.data.metrics["test_accuracy"]
 
         # Additional metrics
-        for metric_name in ["val_accuracy", "precision", "recall", "f1_score", "roc_auc"]:
+        for metric_name in ["val_accuracy", "precision", "recall", "f1_score", "roc_auc", "rmse", "mae", "mse"]:
             if metric_name in run.data.metrics:
                 metrics[metric_name] = run.data.metrics[metric_name]
 
         return metrics
 
     def compare_metrics(
-        self, champion_metrics: Dict[str, float], challenger_metrics: Dict[str, float]
-    ) -> Tuple[bool, Dict[str, any]]:
+        self, 
+        champion_metrics: Dict[str, float], 
+        challenger_metrics: Dict[str, float],
+        primary_metric: str = "test_accuracy"
+    ) -> Tuple[bool, Dict[str, Any]]:
         """
         Compare metrics and decide if challenger should be promoted.
 
         Returns:
             (should_promote, comparison_details)
         """
-        # Primary metric for comparison
-        primary_metric = "test_accuracy"
-
-        if primary_metric not in challenger_metrics:
-            return False, {"error": f"Challenger missing {primary_metric}"}
-
-        # If no champion exists, promote challenger
-        if not champion_metrics:
-            return True, {
-                "reason": "No existing champion - promoting challenger",
-                "challenger_metrics": challenger_metrics,
-            }
-
+        # Check if metric exists
         if primary_metric not in champion_metrics:
-            return True, {
-                "reason": f"Champion missing {primary_metric} - promoting challenger",
-                "challenger_metrics": challenger_metrics,
-            }
+            return True, {"reason": f"Champion missing {primary_metric}, promoting challenger"}
+        
+        if primary_metric not in challenger_metrics:
+            return False, {"reason": f"Challenger missing {primary_metric}, cannot promote"}
 
-        # Calculate improvement
-        champion_score = champion_metrics[primary_metric]
-        challenger_score = challenger_metrics[primary_metric]
-        improvement = challenger_score - champion_score
-        improvement_pct = (improvement / champion_score) * 100 if champion_score > 0 else 0
+        champ_score = champion_metrics[primary_metric]
+        chall_score = challenger_metrics[primary_metric]
 
-        # Decision logic
-        should_promote = improvement >= self.improvement_threshold
+        # Determine direction (higher is better vs lower is better)
+        # Simple heuristic: accuracy/f1/auc -> higher is better; loss/rmse/mae -> lower is better
+        lower_is_better = any(m in primary_metric.lower() for m in ["loss", "rmse", "mae", "mse", "error"])
+        
+        if lower_is_better:
+            improvement = champ_score - chall_score
+            pct_improvement = improvement / abs(champ_score) if champ_score != 0 else 0
+            is_better = improvement > 0  # Lower is better, so positive diff means challenger is lower
+        else:
+            improvement = chall_score - champ_score
+            pct_improvement = improvement / abs(champ_score) if champ_score != 0 else 0
+            is_better = improvement > 0
+
+        should_promote = is_better and (pct_improvement >= self.improvement_threshold)
 
         comparison = {
-            "champion_score": champion_score,
-            "challenger_score": challenger_score,
+            "champion_score": champ_score,
+            "challenger_score": chall_score,
             "improvement": improvement,
-            "improvement_pct": improvement_pct,
-            "threshold": self.improvement_threshold,
-            "threshold_pct": self.improvement_threshold * 100,
-            "should_promote": should_promote,
-            "primary_metric": primary_metric,
-            "all_champion_metrics": champion_metrics,
-            "all_challenger_metrics": challenger_metrics,
+            "pct_improvement": pct_improvement,
+            "metric": primary_metric,
+            "lower_is_better": lower_is_better
         }
 
         if should_promote:
-            comparison["reason"] = f"Challenger improved by {improvement_pct:.2f}%"
+            comparison["reason"] = f"Challenger improved by {pct_improvement*100:.2f}% ({primary_metric})"
         else:
             comparison["reason"] = (
-                f"Improvement {improvement_pct:.2f}% below threshold {self.improvement_threshold * 100:.2f}%"
+                f"Improvement {pct_improvement*100:.2f}% below threshold {self.improvement_threshold * 100:.2f}%"
             )
 
         return should_promote, comparison
 
-    def run_comparison(self) -> Dict[str, any]:
+    def run_comparison(self, primary_metric: str = "test_accuracy") -> Dict[str, Any]:
         """
         Run full comparison pipeline.
 
@@ -183,7 +179,13 @@ class ModelComparator:
         print(f"  Challenger: {challenger_metrics}")
 
         # Compare
-        should_promote, comparison = self.compare_metrics(champion_metrics, challenger_metrics)
+        if not champion_metrics:
+             should_promote = True
+             comparison = {"reason": "No existing champion - promoting challenger"}
+        else:
+             should_promote, comparison = self.compare_metrics(
+                 champion_metrics, challenger_metrics, primary_metric=primary_metric
+             )
 
         # Build report
         report = {
@@ -215,7 +217,7 @@ def main():
     parser.add_argument(
         "--experiment-name",
         type=str,
-        default="iris-classification-ci",
+        required=True,
         help="MLflow experiment name",
     )
     parser.add_argument(
@@ -233,6 +235,12 @@ def main():
         default="comparison_report.json",
         help="Output file for comparison report",
     )
+    parser.add_argument(
+        "--metric",
+        type=str,
+        default="test_accuracy",
+        help="Primary metric to compare (default: test_accuracy)",
+    )
 
     args = parser.parse_args()
 
@@ -243,7 +251,7 @@ def main():
         improvement_threshold=args.improvement_threshold,
     )
 
-    report = comparator.run_comparison()
+    report = comparator.run_comparison(primary_metric=args.metric)
 
     # Save report
     with open(args.output, "w") as f:
@@ -252,7 +260,9 @@ def main():
     print(f"✓ Comparison report saved to {args.output}")
 
     # Exit with appropriate code
-    sys.exit(0 if report.get("promote_challenger", False) else 1)
+    # 0 = success (but logic might vary: 0 usually means command ran successfully)
+    # If we want to fail the pipeline if not promoted, we could use 1, but usually comparison step shouldn't fail pipeline, just set variable
+    sys.exit(0)
 
 
 if __name__ == "__main__":

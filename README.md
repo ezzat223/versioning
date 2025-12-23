@@ -1,360 +1,177 @@
-# Training Templates 🎨
+# MLOps Template for Classical Machine Learning
 
-## Purpose
+A production-ready, generalized MLOps template for classical machine learning workflows (Supervised & Unsupervised).
+This template integrates best practices for version control, experimentation tracking, and deployment.
 
-These are **starter templates** for data scientists. Pick the template for your task, customize it for your model, and start training!
+## Core Components
 
-**YOU ARE A DATA SCIENTIST, NOT AN MLOPS ENGINEER.**  
-Your job: Implement the model. The infrastructure is already set up.
+1.  **Version Control**:
 
----
+    - **Git**: Code versioning.
+    - **DVC**: Data versioning with Git pre-hooks.
+    - **Reproducibility**: Complete pipeline reproducibility through git commit hashes.
 
-## 📋 Available Templates
+2.  **Experimentation Tracking**:
 
-| Template | Use For | What to Implement |
-|----------|---------|-------------------|
-| `train_supervised.py` | Classification, Regression | Model architecture, evaluation metrics |
-| `train_unsupervised.py` | Clustering, Dimensionality Reduction | Model type, clustering metrics |
-| `params.yaml.template` | All tasks | Your model's hyperparameters |
-| `MLproject.template` | All tasks | Parameter definitions |
+    - **MLflow**: Experiment tracking, model registry, dataset versioning.
+    - **Advanced Aliasing**: Challenger/Champion model promotion.
 
----
+3.  **Data Loading**:
 
-## 🚀 Quick Start (5 Minutes)
+    - Modular loaders for Tabular, Image, and Database sources.
+    - Located in `src/data_loaders/`.
 
-### Step 1: Choose Your Template
+4.  **Training Scripts**:
+
+    - Standalone, explicit training scripts derived from templates.
+    - Located in `training/` (active script) and `templates/` (reference templates).
+
+5.  **Deployment**:
+
+    - **Ray Serve**: Online inference.
+    - **Ray Data**: Batch prediction.
+    - Located in `src/deployment/`.
+
+6.  **CI/CD**:
+    - GitLab CI/CD integration (`.gitlab-ci.yml`).
+    - Pre-commit hooks for code quality and DVC.
+
+## Directory Structure
+
+```
+├── .dvc/                   # DVC configuration
+├── .github/                # GitHub Actions (if applicable)
+├── .gitlab-ci.yml          # GitLab CI/CD pipeline
+├── .pre-commit-config.yaml # Pre-commit hooks
+├── dvc.yaml                # DVC pipeline stages
+├── params.yaml             # DVC/MLflow parameters
+├── training/               # Active training scripts
+│   └── train.py            # Main training entry point
+├── templates/              # Reference templates (Supervised, Unsupervised, Tuning)
+├── src/
+│   ├── data_loaders/       # Data loading modules
+│   ├── deployment/         # Ray Serve/Data deployment
+│   └── utils.py            # General utilities
+├── scripts/                # CI/CD and helper scripts
+└── data/                   # Data directory (DVC tracked)
+```
+
+## Setup
+
+1.  **Install Dependencies**:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+2.  **Initialize Pre-commit Hooks**:
+
+    ```bash
+    pre-commit install
+    ```
+
+3.  **Configure DVC**:
+    ```bash
+    dvc init
+    # Configure remote storage...
+    ```
+
+## Usage
+
+### 1. Training (Supervised)
+
+You can run training directly using the script:
 
 ```bash
-# For supervised learning (classification/regression)
-cp templates/train_supervised.py train.py
-
-# OR for unsupervised learning (clustering/etc)
-cp templates/train_unsupervised.py train.py
+python training/train.py \
+    --data-path data/processed/dataset.csv \
+    --target-column target \
+    --experiment-name my-experiment
 ```
 
-### Step 2: Copy Config Templates
+Or via DVC:
 
 ```bash
-cp templates/params.yaml.template params.yaml
-cp templates/MLproject.template MLproject
+dvc repro train_supervised
 ```
 
-### Step 3: Open `train.py` and Follow Instructions
+### 2. Customizing Training
 
-Look for `# TODO:` comments. You'll need to:
+To change the model or logic, edit `training/train.py`.
+You can also use other templates from `templates/` as a starting point:
 
-1. **Choose data loader** (delete the other 2)
-   ```python
-   # Keep one, delete two:
-   from src.data_loaders import TabularDataLoader  # ← Keep this
-   # from src.data_loaders import ImageDataLoader  # ← Delete
-   # from src.data_loaders import DatabaseDataLoader  # ← Delete
-   ```
+- `templates/train_unsupervised.py`
+- `templates/hyperparam_tuning.py`
 
-2. **Implement your model**
-   ```python
-   def train_model(X_train, y_train, args):
-       # TODO: Replace with your model
-       import xgboost as xgb
-       model = xgb.XGBClassifier(...)
-       model.fit(X_train, y_train)
-       return model
-   ```
+### 3. Deployment
 
-3. **Add hyperparameters**
-   ```python
-   def parse_args():
-       # TODO: Add your hyperparameters
-       parser.add_argument("--learning-rate", type=float, default=0.1)
-       parser.add_argument("--n-estimators", type=int, default=100)
-   ```
-
-4. **Customize evaluation**
-   ```python
-   def evaluate_model(model, X_test, y_test):
-       # TODO: Add your metrics
-       metrics = {
-           "accuracy": accuracy_score(y_test, y_pred),
-           "auc": roc_auc_score(y_test, y_proba)
-       }
-       return metrics
-   ```
-
-### Step 4: Update `params.yaml` and `MLproject`
-
-Add your hyperparameters in both files. See templates for examples.
-
-### Step 5: Run!
+**Online Inference (Ray Serve)**:
 
 ```bash
-mlflow run . -e supervised -P learning_rate=0.05
+python src/deployment/manager.py --type ray-serve-online
 ```
 
----
+**Batch Inference (Ray Data)**:
 
-## 📖 What Each File Does
-
-### `train_supervised.py` / `train_unsupervised.py`
-
-**Your training script template.**
-
-Contains:
-- ✅ Data loading (3 examples - pick 1)
-- ✅ MLflow setup (done for you)
-- ✅ Git metadata tracking (done for you)
-- ⚠️ Model training (YOU implement)
-- ⚠️ Evaluation metrics (YOU implement)
-- ⚠️ Hyperparameters (YOU add)
-
-**What you do:**
-1. Choose data loader
-2. Implement model
-3. Add hyperparameters
-4. Customize metrics
-5. Delete TODO comments
-
-### `params.yaml.template`
-
-**Hyperparameter configuration template.**
-
-Contains:
-- ✅ Data configuration section
-- ⚠️ Model hyperparameters (YOU add)
-- ✅ MLflow configuration
-
-**What you do:**
-1. Uncomment section for your task (supervised/unsupervised)
-2. Add your model's hyperparameters
-3. Delete unused sections
-
-**Used by:** DVC pipeline (`dvc repro`)
-
-### `MLproject.template`
-
-**MLflow Projects configuration template.**
-
-Contains:
-- ✅ Environment setup (python_env.yaml)
-- ⚠️ Entry points (YOU customize)
-- ⚠️ Parameters with types (YOU add)
-- ⚠️ Command to run (YOU update)
-
-**What you do:**
-1. Choose entry point (supervised/unsupervised)
-2. Add your hyperparameters with types
-3. Update command with your params
-4. Delete unused entry points
-
-**Used by:** MLflow Projects (`mlflow run .`)
-
----
-
-## 🎯 Template Philosophy
-
-### What Templates Provide ✅
-
-**Infrastructure (You don't touch):**
-- MLflow logging and tracking
-- Git metadata extraction
-- Data loader integration
-- Model persistence
-- Metrics logging
-- Reproducibility tracking
-
-### What You Implement ⚠️
-
-**ML Logic (Your expertise):**
-- Model selection and architecture
-- Hyperparameter choices
-- Feature engineering (if needed)
-- Custom evaluation metrics
-- Domain-specific logic
-
-### What You Customize 🎨
-
-**Configuration (Your decisions):**
-- Which data loader to use
-- Hyperparameter values
-- Train/test split ratios
-- Evaluation metrics
-- Experiment names
-
----
-
-## 📚 Examples by Model Type
-
-### RandomForest (Supervised)
-
-```python
-# In train.py
-from sklearn.ensemble import RandomForestClassifier
-
-def train_model(X_train, y_train, args):
-    model = RandomForestClassifier(
-        n_estimators=args.n_estimators,
-        max_depth=args.max_depth,
-        random_state=args.random_state
-    )
-    model.fit(X_train, y_train)
-    return model
-
-def parse_args():
-    parser.add_argument("--n-estimators", type=int, default=100)
-    parser.add_argument("--max-depth", type=int, default=10)
+```bash
+python src/deployment/manager.py --type ray-batch --input data/new_data.csv --output data/predictions.csv
 ```
 
-### XGBoost (Supervised)
+## CI/CD Pipeline
 
-```python
-# In train.py
-import xgboost as xgb
+The `.gitlab-ci.yml` file defines the following stages:
 
-def train_model(X_train, y_train, args):
-    model = xgb.XGBClassifier(
-        learning_rate=args.learning_rate,
-        n_estimators=args.n_estimators,
-        max_depth=args.max_depth,
-        subsample=args.subsample
-    )
-    model.fit(X_train, y_train)
-    return model
+1.  **Quality**: Code formatting, linting, security checks.
+2.  **Validate**: Data validation.
+3.  **Train**: Train challenger model.
+4.  **Evaluate**: Compare challenger vs champion.
+5.  **Deploy**: Build and push Docker images.
+6.  **Release**: Tag and release.
+7.  **Generate**: Generate new projects (Meta-MLOps).
+
+## Project Generator (Meta-MLOps)
+
+This repository includes a **Project Scaffolding Tool** that allows you to generate new, customized MLOps projects based on this template.
+
+### How to Generate a New Project
+
+**Option 1: Via GitLab CI/CD (Recommended)**
+
+1.  Go to **Build** > **Pipelines**.
+2.  Click **Run pipeline**.
+3.  Set the following variables:
+    - `PROJECT_NAME`: Name of the new project (e.g., `churn-prediction`).
+    - `TASK_TYPE`: `supervised` or `unsupervised`.
+    - `DATA_TYPE`: `tabular`, `image`, or `database`.
+    - `DEPLOYMENT`: `all`, `ray-serve`, `ray-batch`, or `none`.
+4.  Run the pipeline.
+5.  When the `generate_repo` job completes, download the `artifacts.zip`.
+6.  Extract it to start your new project!
+
+**Option 2: Via CLI (Local)**
+You can run the generator script locally:
+
+```bash
+python scripts/scaffold_project.py \
+    --name my-new-project \
+    --task-type supervised \
+    --data-type tabular \
+    --deployment all \
+    --output-dir ../
 ```
 
-### KMeans (Unsupervised)
+### What it Generates
 
-```python
-# In train.py
-from sklearn.cluster import KMeans
+The tool creates a clean repository containing ONLY the components you need:
 
-def train_model(X_train, args):
-    model = KMeans(
-        n_clusters=args.n_clusters,
-        max_iter=args.max_iter,
-        random_state=args.random_state
-    )
-    model.fit(X_train)
-    return model
-```
+- **Tailored Training Script**: Pre-configured for your task type.
+- **Specific Data Loader**: Only the loader you selected.
+- **Deployment Configs**: Ray Serve/Batch files if requested.
+- **CI/CD Pipeline**: customized `.gitlab-ci.yml`.
+- **DVC & Params**: Configured `dvc.yaml` and `params.yaml`.
 
-### Neural Network (Supervised)
+## Customization
 
-```python
-# In train.py
-import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self, input_dim, hidden_dim):
-        super().__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, 1)
-    
-    def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        return self.fc2(x)
-
-def train_model(X_train, y_train, args):
-    model = MyModel(
-        input_dim=X_train.shape[1],
-        hidden_dim=args.hidden_dim
-    )
-    # Training loop...
-    return model
-```
-
----
-
-## 🔍 Template Anatomy
-
-### What's Pre-Built (Don't Modify)
-
-```python
-def main():
-    """Main training pipeline - MLOps infrastructure (don't modify)."""
-    # This handles:
-    # - Git metadata
-    # - MLflow setup
-    # - Logging
-    # - Model persistence
-    # - Reproducibility
-```
-
-### What You Implement
-
-```python
-def load_data(args):
-    """INSTRUCTIONS: Choose loader, delete others."""
-    # Pick one data loader
-    # Delete the other two examples
-
-def train_model(X_train, y_train, args):
-    """INSTRUCTIONS: Implement your model."""
-    # Replace placeholder with your model
-
-def evaluate_model(model, X_test, y_test):
-    """INSTRUCTIONS: Add your metrics."""
-    # Add evaluation metrics for your task
-```
-
----
-
-## ⚠️ Common Mistakes
-
-### ❌ Mistake 1: Not Deleting Unused Code
-
-```python
-# Don't leave all three loaders uncommented!
-from src.data_loaders import TabularDataLoader  # Using this
-from src.data_loaders import ImageDataLoader    # DELETE THIS
-from src.data_loaders import DatabaseDataLoader # DELETE THIS
-```
-
-### ❌ Mistake 2: Forgetting to Add Hyperparameters
-
-```python
-# Must add to BOTH train.py and MLproject!
-
-# In train.py
-parser.add_argument("--learning-rate", type=float, default=0.1)
-
-# In MLproject
-learning_rate: {type: float, default: 0.1}
-```
-
-### ❌ Mistake 3: Modifying Infrastructure Code
-
-```python
-# DON'T modify this:
-def main():
-    """Main training pipeline - MLOps infrastructure (don't modify)."""
-    # Leave this alone!
-
-# DO modify this:
-def train_model(X_train, y_train, args):
-    # Implement your model here
-```
-
----
-
-## 📞 Need Help?
-
-- **Data loader examples**: `../USAGE_EXAMPLES.md`
-- **Complete guide**: `../DATA_SCIENTIST_GUIDE.md`
-- **Template comments**: Read the `# TODO:` comments in each file
-- **MLflow docs**: https://mlflow.org/docs/latest/projects.html
-
----
-
-## 🎉 Success Criteria
-
-You've successfully used the template when:
-
-✅ You chose and kept ONE data loader  
-✅ You implemented YOUR model  
-✅ You added YOUR hyperparameters (in 3 places)  
-✅ You customized YOUR evaluation metrics  
-✅ You deleted the TODO comments  
-✅ Training runs via `mlflow run .`  
-✅ Results appear in MLflow UI  
-
-**Now you're doing ML, not infrastructure work! 🚀**
+- **Models**: Edit `training/train.py` directly.
+- **Data**: Add new loaders in `src/data_loaders/`.
+- **Pipeline**: Modify `dvc.yaml` to add new stages or parameters.

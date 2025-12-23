@@ -1,109 +1,48 @@
 # Core dependencies for production inference
 fastapi
-# uvicorn[standard]
-uvicorn
+uvicorn[standard]
 pydantic
 python-multipart
-
-# Utilities
 python-dotenv
 
 # =============================================================================
-# Deployment Requirements
+# Deployment Requirements (Ray Only)
 # =============================================================================
-# Install based on your deployment strategy:
-#
-# Ray Serve/Batch:  pip install -r requirements_deployment.txt --extra-index-url https://pypi.org/simple/
-# BentoML:          pip install bentoml bentoctl
-# All:              pip install -r requirements_deployment.txt
-#
-# =============================================================================
-
-# Core dependencies (already in environment.yml)
-mlflow
-pandas
-scikit-learn
-xgboost
-numpy
+# Ray Serve + Ray Core + Ray Data
+ray[default,serve,data]==2.9.0
+aiohttp==3.9.1
+starlette==0.27.0
 
 # =============================================================================
-# Ray Serve + Ray Core
+# Core ML Libraries
 # =============================================================================
-# For online and batch inference on servers (on-prem or cloud)
-# ray[default,serve]
-ray
-aiohttp
-pydantic
-
-# Optional: GPU support
-# ray[default,serve]==2.9.0  # Already included above
-
-# =============================================================================
-# BentoML
-# =============================================================================
-# For serverless deployments (AWS Lambda, GCP Cloud Run, Azure Functions)
-bentoml
-pydantic  # Already included
-
-# Cloud deployment tooling
-bentoctl
-# terraform  # For infrastructure as code
-
-# Cloud-specific operators (install as needed)
-# bentoctl-aws-lambda>=0.1.0
-# bentoctl-google-cloud-run>=0.1.0
-# bentoctl-azure-container-instances>=0.1.0
-
-# =============================================================================
-# Web Framework Options
-# =============================================================================
-# FastAPI (alternative to Ray Serve for simple APIs)
-fastapi
-uvicorn[standard]
+mlflow==2.10.0
+pandas==2.1.3
+scikit-learn==1.3.2
+xgboost==2.0.3
+numpy==1.26.2
 
 # =============================================================================
 # Monitoring & Observability
 # =============================================================================
-# Prometheus metrics
-prometheus-client
-
-# Logging
-python-json-logger
-
-# =============================================================================
-# Load Testing
-# =============================================================================
-locust  # For load testing
+prometheus-client==0.19.0
+python-json-logger==2.0.7
 
 # =============================================================================
 # Utilities
 # =============================================================================
-# Progress bars
-tqdm
-
-# Configuration
-pyyaml
-python-dotenv
-
-# HTTP requests
-requests
-
-# =============================================================================
-# Cloud SDK (optional - install separately)
-# =============================================================================
-# AWS: aws-cli, boto3
-# GCP: google-cloud-storage, google-auth
-# Azure: azure-cli, azure-storage-blob
+tqdm==4.66.1
+pyyaml==6.0.1
+requests==2.31.0
+click
 
 # =============================================================================
 # Development
 # =============================================================================
-# Testing
-pytest
-pytest-asyncio
-
-# Code quality
-black
-flake8
-mypy
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.0
 pre-commit
+jinja2

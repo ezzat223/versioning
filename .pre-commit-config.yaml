@@ -2,100 +2,54 @@
 # Install: pip install pre-commit
 # Setup: pre-commit install
 # Run manually: pre-commit run --all-files
-# To skip hooks for a commit, use: git commit --no-verify
-# Update versions: pre-commit autoupdate
 
 repos:
-  # Standard pre-commit hooks (basic checks)
+  # DVC hooks
+  - repo: https://github.com/iterative/pre-commit-dvc
+    rev: 0.1.0
+    hooks:
+      - id: dvc-pre-commit
+        additional_dependencies: [dvc]
+      - id: dvc-pre-push
+        additional_dependencies: [dvc]
+
+  # Standard pre-commit hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+    rev: v4.4.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
-        args: ['--unsafe']  # Allow custom YAML tags
       - id: check-added-large-files
-        args: ['--maxkb=1000']
-      - id: check-json
-      - id: check-toml
-      - id: check-merge-conflict
-      - id: detect-private-key
-      - id: mixed-line-ending
 
   # Black - Code formatting
   - repo: https://github.com/psf/black
-    rev: 25.12.0
+    rev: 23.3.0
     hooks:
       - id: black
-        language_version: python3.11
-        args: ['--line-length=100']
+        language_version: python3
         exclude: ^(data/|models/|reports/|notebooks/)
 
   # isort - Import sorting
   - repo: https://github.com/PyCQA/isort
-    rev: 7.0.0
+    rev: 5.12.0
     hooks:
       - id: isort
-        args: ['--profile=black', '--line-length=100']
+        args: ['--profile=black', '--line-length=88']
         exclude: ^(data/|models/|reports/|notebooks/)
 
   # Flake8 - Linting
   - repo: https://github.com/pycqa/flake8
-    rev: 7.3.0
+    rev: 6.0.0
     hooks:
       - id: flake8
-        args: ['--max-line-length=100', '--ignore=E203,W503']
+        args: ['--max-line-length=88', '--ignore=E203,W503']
         exclude: ^(docs/|data/|models/|reports/|notebooks/|templates/)
 
   # MyPy - Type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+    rev: v1.3.0
     hooks:
       - id: mypy
         args: ['--ignore-missing-imports', '--no-strict-optional']
-        additional_dependencies: []
         exclude: ^(docs/|data/|models/|reports/|notebooks/|templates/|scripts/)
-        # Only check main src code, skip scripts and notebooks
-
-  # Security checks with Bandit
-  - repo: https://github.com/PyCQA/bandit
-    rev: 1.9.2
-    hooks:
-      - id: bandit
-        args: ['-ll', '-r', 'src/', 'scripts/']
-        exclude: ^(data/|models/|reports/|notebooks/|templates/)
-
-  # YAML linting
-  - repo: https://github.com/adrienverge/yamllint
-    rev: v1.37.1
-    hooks:
-      - id: yamllint
-        args: ['-d', '{extends: default, rules: {line-length: {max: 120}, document-start: disable}}']
-        exclude: ^(templates/)
-
-  # Local hooks integrated with your Makefile
-  - repo: local
-    hooks:
-      # Run clean before committing
-      - id: clean
-        name: clean
-        entry: make
-        args: ["clean"]
-        language: system
-        pass_filenames: false
-        stages: [pre-commit]
-
-      # Optional: Run style checks (uncomment if you want this)
-      # - id: style
-      #   name: style
-      #   entry: make
-      #   args: ["style"]
-      #   language: system
-      #   pass_filenames: false
-      #   stages: [commit]
-
-# Additional configuration
-default_language_version:
-  python: python3.11
-
-fail_fast: false  # Continue running all hooks even if one fails

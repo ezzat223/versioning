@@ -1,4 +1,4 @@
-name: iris-mlops
+name: mlops
 channels:
   - conda-forge
   - defaults
@@ -9,57 +9,42 @@ dependencies:
   
   # System-level optimizations
   - mkl  # Intel Math Kernel Library for faster numpy/scipy
-  # - cudatoolkit=11.8  # For GPU support (NVIDIA) - uncomment if you have NVIDIA GPU
   
-  # Core scientific packages (conda versions for better compatibility)
+  # Core scientific packages
   - numpy
   - pandas
   - scikit-learn
   
-  # Visualization (for local analysis)
+  # Visualization
   - matplotlib
   - seaborn
   
-  # Jupyter for interactive development
+  # Jupyter
   - jupyter
   - ipython
   - ipykernel
-  
-  # Virtual environment support for MLflow
-  - virtualenv
   
   - pip:
       # MLOps tools
       - mlflow
       - dvc
       - dvc-s3
-      # - dvc-gs  # Uncomment for Google Cloud Storage
-      # - dvc-azure  # Uncomment for Azure Blob Storage
       
-      # Git integration
+      # Deployment
+      - ray[default,serve,data]
+      
+      # Utils
       - gitpython
-      
-      # Configuration management
       - pyyaml
+      - jinja2
+      - pre-commit
       
-      # Additional ML libraries (uncomment as needed)
-      # - xgboost>=2.0.0
-      # - lightgbm>=4.0.0
-      # - catboost>=1.2
-      # - tensorflow>=2.13.0
-      # - torch>=2.0.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118  # For CUDA 11.8
-      
-      # Clustering (for unsupervised learning)
-      - scipy
-      
-      # Development tools
+      # Development
       - pytest
       - black
       - flake8
       - mypy
       
-      # Optional: Cloud storage
-      - boto3  # AWS S3
+      # Cloud
+      - boto3
       - psycopg2-binary
-      # - google-cloud-storage>=2.10.0  # GCS
-      # - azure-storage-blob>=12.17.0  # Azure
