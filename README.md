@@ -104,15 +104,16 @@ graph LR
 
 This repository includes a **Project Generator Pipeline** that can be triggered manually from GitLab.
 
-1.  Go to **Build > Pipelines** in GitLab.
-2.  Click **Run pipeline**.
-3.  Set the following variables:
-    - `PROJECT_NAME`: Your desired project name.
-    - `TASK_TYPE`: `supervised` or `unsupervised`.
-    - `DATA_TYPE`: `tabular`, `image`, or `database`.
-    - `DEPLOYMENT`: `ray-serve`, `ray-batch`, or `all`.
-4.  Run the pipeline.
-5.  Download the **Artifacts** from the completed job to get your `.tar.gz` project archive.
+- Go to `Build > Pipelines` and click `Run pipeline`.
+- The UI presents dropdowns and inputs for:
+  - `PROJECT_NAME` (text)
+  - `TASK_TYPE` (dropdown: `supervised`, `unsupervised`)
+  - `DATA_TYPE` (dropdown: `tabular`, `image`, `database`)
+  - `DEPLOYMENT` (dropdown: `all`, `ray-serve`, `ray-batch`, `none`)
+- Run the pipeline.
+- Open the job and download **Artifacts**. The archive contains:
+  - `generated_projects/<PROJECT_NAME>/` (full generated repo)
+  - `generated_projects/<PROJECT_NAME>.tar.gz` (portable bundle)
 
 ---
 
