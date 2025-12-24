@@ -45,7 +45,8 @@ generate_repo:
   - python scripts/scaffold_project.py --name ${PROJECT_NAME} --task-type ${TASK_TYPE} --data-type ${DATA_TYPE} --deployment ${DEPLOYMENT} --output-dir generated_projects
   - tar -czf generated_projects/${PROJECT_NAME}.tar.gz -C generated_projects ${PROJECT_NAME}
   - ls -lh generated_projects/${PROJECT_NAME}.tar.gz
-  - echo "✅ Project generated: generated_projects/${PROJECT_NAME}.tar.gz"
+  - |
+    echo "✅ Project generated: generated_projects/${PROJECT_NAME}.tar.gz"
   artifacts:
     paths:
     - generated_projects/
