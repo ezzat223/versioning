@@ -131,21 +131,21 @@ cat > .git/hooks/post-checkout << 'EOF'
 
 # Only run if checking out a commit (not just switching branches with same files)
 if [ "$3" == "1" ]; then
-    {% comment %} echo "🔄 Syncing environment and data after checkout..."
-    
-    # Check if conda is available
-    if command -v conda &> /dev/null; then
-        # Get environment name from environment.yml
-        ENV_NAME=$(grep 'name:' environment.yml | head -1 | awk '{print $2}')
-        
-        if [ ! -z "$ENV_NAME" ]; then
-            # Update conda environment to match checked out environment.yml
-            echo "📦 Updating conda environment: $ENV_NAME"
-            conda env update -n "$ENV_NAME" -f environment.yml --prune 2>/dev/null || \
-                echo "⚠️  Environment update skipped (may need manual update)"
-        fi
-    fi
-     {% endcomment %}
+    # echo "🔄 Syncing environment and data after checkout..."
+    # 
+    # # Check if conda is available
+    # if command -v conda &> /dev/null; then
+    #     # Get environment name from environment.yml
+    #     ENV_NAME=$(grep 'name:' environment.yml | head -1 | awk '{print $2}')
+    #     
+    #     if [ ! -z "$ENV_NAME" ]; then
+    #         # Update conda environment to match checked out environment.yml
+    #         echo "📦 Updating conda environment: $ENV_NAME"
+    #         conda env update -n "$ENV_NAME" -f environment.yml --prune 2>/dev/null || \
+    #             echo "⚠️  Environment update skipped (may need manual update)"
+    #     fi
+    # fi
+
     # Sync DVC data to match checked out .dvc files
     if command -v dvc &> /dev/null; then
         echo "📊 Syncing DVC data..."
@@ -164,19 +164,6 @@ cat > .git/hooks/post-merge << 'EOF'
 # =============================================================================
 # Auto-sync after git merge for full reproducibility
 # =============================================================================
-
-{% comment %} echo "🔄 Syncing environment and data after merge..."
-
-# Check if conda is available
-if command -v conda &> /dev/null; then
-    ENV_NAME=$(grep 'name:' environment.yml | head -1 | awk '{print $2}')
-    
-    if [ ! -z "$ENV_NAME" ]; then
-        echo "📦 Updating conda environment: $ENV_NAME"
-        conda env update -n "$ENV_NAME" -f environment.yml --prune 2>/dev/null || \
-            echo "⚠️  Environment update skipped (may need manual update)"
-    fi
-fi {% endcomment %}
 
 # Sync DVC data
 if command -v dvc &> /dev/null; then
