@@ -1,94 +1,147 @@
 """
-Generate CML (Continuous Machine Learning) Report.
-Reads the comparison report and creates a markdown file for CML to post as a comment.
+Generate CML-compatible markdown report from model comparison.
+Simple conversion from JSON to markdown for GitLab MR comments.
 """
-
 import argparse
 import json
-import os
 from pathlib import Path
 
 
-def generate_report(comparison_path: str, output_path: str):
-    """Generate Markdown report from comparison JSON."""
+def generate_markdown_report(comparison: dict) -> str:
+    """
+    Generate markdown report from comparison JSON.
+    Designed for CML (Continuous Machine Learning) comments.
+    """
     
-    if not os.path.exists(comparison_path):
-        print(f"❌ Comparison report not found at {comparison_path}")
-        return
-
-    with open(comparison_path, "r") as f:
-        data = json.load(f)
-
-    experiment_name = data.get("experiment_name", "Unknown")
-    promote = data.get("promote_challenger", False)
-    comparison = data.get("comparison", {})
+    promote = comparison.get("promote_challenger", False)
+    comp = comparison.get("comparison", {})
     
-    # Icons
-    status_icon = "✅" if promote else "⚠️"
-    decision_text = "PROMOTE CHALLENGER" if promote else "KEEP CHAMPION"
-
-    # Markdown Content
-    md = f"""# 📊 Model Comparison Report
+    # Header with decision
+    if promote:
+        header = "# 🏆 Model Promoted to Champion\n\n"
+        status_badge = "![Status](https://img.shields.io/badge/Status-PROMOTED-success)"
+    else:
+        header = "# ⚠️ Champion Retained\n\n"
+        status_badge = "![Status](https://img.shields.io/badge/Status-RETAINED-yellow)"
     
-**Experiment:** `{experiment_name}`
-**Decision:** {status_icon} **{decision_text}**
-
-## 🏆 Decision Summary
-{comparison.get("reason", "No details available")}
-
-## 📈 Metrics Comparison
-
-| Metric | Champion | Challenger | Improvement |
-|--------|----------|------------|-------------|
-"""
-
-    # Add primary metric row
-    primary_metric = comparison.get("primary_metric", "accuracy")
-    champ_score = comparison.get("champion_score", 0)
-    chall_score = comparison.get("challenger_score", 0)
-    imp_pct = comparison.get("improvement_pct", 0)
+    lines = [
+        header,
+        status_badge,
+        "",
+        "## 📊 Decision Summary",
+        "",
+        f"**Reason:** {comp.get('reason', 'No reason provided')}",
+        "",
+    ]
     
-    md += f"| **{primary_metric}** | {champ_score:.4f} | {chall_score:.4f} | {imp_pct:+.2f}% |\n"
-
-    # Add other metrics if available
-    champ_metrics = comparison.get("all_champion_metrics", {})
-    chall_metrics = comparison.get("all_challenger_metrics", {})
+    # Metrics comparison table
+    metric = comp.get("metric", "metric")
+    champ_score = comp.get("champion_score")
+    chall_score = comp.get("challenger_score")
+    improvement = comp.get("pct_improvement", 0)
     
-    all_keys = set(champ_metrics.keys()) | set(chall_metrics.keys())
-    for k in sorted(all_keys):
-        if k == primary_metric:
-            continue
-        c_val = champ_metrics.get(k, 0)
-        ch_val = chall_metrics.get(k, 0)
-        # Calculate pct diff if possible
-        if c_val != 0:
-            diff = ((ch_val - c_val) / abs(c_val)) * 100
-            diff_str = f"{diff:+.2f}%"
-        else:
-            diff_str = "N/A"
-            
-        md += f"| {k} | {c_val:.4f} | {ch_val:.4f} | {diff_str} |\n"
+    lines.extend([
+        "## 📈 Performance Comparison",
+        "",
+        f"**Primary Metric:** `{metric}`",
+        "",
+        "| Model | Score | Change |",
+        "|-------|-------|--------|",
+    ])
+    
+    # Champion row
+    if champ_score is not None:
+        lines.append(f"| Champion | `{champ_score:.4f}` | baseline |")
+    else:
+        lines.append("| Champion | N/A | _(first model)_ |")
+    
+    # Challenger row
+    if chall_score is not None:
+        change_emoji = "📈" if improvement > 0 else "📉" if improvement < 0 else "➡️"
+        change_str = f"`{improvement*100:+.2f}%` {change_emoji}"
+        lines.append(f"| **Challenger** | `{chall_score:.4f}` | {change_str} |")
+    
+    lines.append("")
+    
+    # All metrics (if available)
+    all_metrics = comparison.get("all_challenger_metrics", {})
+    if all_metrics and len(all_metrics) > 1:
+        lines.extend([
+            "<details>",
+            "<summary><b>📋 All Metrics</b> (click to expand)</summary>",
+            "",
+            "| Metric | Value |",
+            "|--------|-------|",
+        ])
+        
+        for name, value in sorted(all_metrics.items()):
+            # Highlight primary metric
+            if name == metric:
+                lines.append(f"| **{name}** | **`{value:.4f}`** |")
+            else:
+                lines.append(f"| {name} | `{value:.4f}` |")
+        
+        lines.extend(["", "</details>", ""])
+    
+    # Run IDs
+    lines.extend([
+        "---",
+        "",
+        "**Run Information:**",
+        f"- Champion: `{comparison.get('champion_run_id', 'None')}`",
+        f"- Challenger: `{comparison.get('challenger_run_id', 'Unknown')}`",
+        "",
+        f"_Generated by MLOps Pipeline_",
+    ])
+    
+    return "\n".join(lines)
 
-    md += """
-## 🔗 Run Details
-- **Champion Run ID:** `{}` 
-- **Challenger Run ID:** `{}`
-""".format(
-        data.get("champion_run_id", "None"),
-        data.get("challenger_run_id", "None")
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Generate CML markdown report from comparison JSON"
     )
-
-    # Write to file
-    with open(output_path, "w") as f:
-        f.write(md)
+    parser.add_argument(
+        "--comparison",
+        required=True,
+        help="Path to comparison.json"
+    )
+    parser.add_argument(
+        "--output",
+        default="report.md",
+        help="Output markdown file"
+    )
     
-    print(f"✓ CML report generated at {output_path}")
+    args = parser.parse_args()
+    
+    # Load comparison
+    comparison_path = Path(args.comparison)
+    if not comparison_path.exists():
+        print(f"❌ Comparison file not found: {comparison_path}")
+        return 1
+    
+    with open(comparison_path) as f:
+        comparison = json.load(f)
+    
+    # Generate report
+    report = generate_markdown_report(comparison)
+    
+    # Save
+    output_path = Path(args.output)
+    with open(output_path, "w") as f:
+        f.write(report)
+    
+    print(f"✅ CML report saved to {output_path}")
+    
+    # Preview (useful for debugging)
+    print("\n" + "=" * 70)
+    print("REPORT PREVIEW:")
+    print("=" * 70)
+    print(report)
+    print("=" * 70)
+    
+    return 0
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate CML Report")
-    parser.add_argument("--comparison", required=True, help="Path to comparison JSON")
-    parser.add_argument("--output", default="cml_report.md", help="Output markdown file")
-    args = parser.parse_args()
-    
-    generate_report(args.comparison, args.output)
+    exit(main())

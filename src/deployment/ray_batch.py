@@ -1,25 +1,15 @@
 """
 Ray Data for large-scale batch inference.
-Fully integrated with MLflow and CI/CD pipeline.
-
-Features:
-- Distributed processing with Ray Data
-- Auto-loads champion model from MLflow
-- Fault tolerance and checkpointing
-- Progress tracking
-- Supports CSV, Parquet, Delta Lake
-- Memory-efficient streaming
+Fully integrated with MLflow - loads champion model automatically.
 """
 import os
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Optional
 from pathlib import Path
 import logging
 
 import ray
-from ray import data
 from ray.data import Dataset
 import mlflow
-from mlflow.tracking import MlflowClient
 import pandas as pd
 import numpy as np
 
@@ -27,75 +17,11 @@ import numpy as np
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-# =============================================================================
-# Configuration
-# =============================================================================
-
+# Configuration from environment
 MODEL_NAME = os.getenv("MODEL_NAME", "template-model")
-MODEL_VERSION = os.getenv("MODEL_VERSION", "latest")
+MODEL_VERSION = os.getenv("MODEL_VERSION", "champion")
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001")
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1000"))
-EXPERIMENT_NAME = os.getenv("EXPERIMENT_NAME", "template-experiment")
-
-
-# =============================================================================
-# Model Loading Utilities
-# =============================================================================
-
-def get_champion_model_uri() -> str:
-    """
-    Get champion model URI from MLflow.
-    
-    Returns:
-        Model URI string
-    """
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    client = MlflowClient()
-    
-    try:
-        # Search for champion model
-        experiment = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
-        
-        if not experiment:
-            raise ValueError(f"No experiment found for {EXPERIMENT_NAME}")
-        
-        # Get champion run
-        runs = client.search_runs(
-            experiment_ids=[experiment.experiment_id],
-            filter_string="tags.model_alias = 'champion'",
-            order_by=["start_time DESC"],
-            max_results=1
-        )
-        
-        if runs:
-            run = runs[0]
-            model_uri = f"runs:/{run.info.run_id}/model"
-            logger.info(f"✓ Found champion model: {model_uri}")
-            logger.info(f"  Accuracy: {run.data.metrics.get('test_accuracy', 'N/A')}")
-            return model_uri
-        else:
-            # No champion, get latest
-            runs = client.search_runs(
-                experiment_ids=[experiment.experiment_id],
-                order_by=["start_time DESC"],
-                max_results=1
-            )
-            
-            if runs:
-                run = runs[0]
-                model_uri = f"runs:/{run.info.run_id}/model"
-                logger.warning(f"⚠️ No champion found, using latest: {model_uri}")
-                return model_uri
-            else:
-                raise ValueError("No models found in MLflow")
-    
-    except Exception as e:
-        logger.error(f"Error getting model URI: {e}")
-        # Fallback to local
-        local_path = f"models/{MODEL_NAME}"
-        logger.warning(f"Using local model: {local_path}")
-        return local_path
 
 
 # =============================================================================
@@ -104,12 +30,12 @@ def get_champion_model_uri() -> str:
 
 class MLModel:
     """
-    Model class for Ray Data batch inference.
+    Model wrapper for Ray Data batch inference.
     Must be serializable (no __init__ with args).
     """
     
     def __init__(self):
-        """Initialize model (called on each worker)."""
+        """Initialize model (called once per worker)."""
         self.model = None
         self.model_uri = None
     
@@ -133,18 +59,16 @@ class MLModel:
         # Make predictions
         predictions = self.model.predict(df)
         
-        # Try to get probabilities
+        # Try to get probabilities if classifier
         probabilities = None
         try:
-            if hasattr(self.model._model_impl, 'predict_proba'):
+            if hasattr(self.model, '_model_impl') and hasattr(self.model._model_impl, 'predict_proba'):
                 probabilities = self.model._model_impl.predict_proba(df)
         except:
             pass
         
         # Build output batch
-        output = {
-            "prediction": predictions
-        }
+        output = {"prediction": predictions}
         
         # Add probability columns if available
         if probabilities is not None:
@@ -154,18 +78,28 @@ class MLModel:
         return output
     
     def _load_model(self):
-        """Load model from MLflow."""
+        """Load model from MLflow using alias."""
         logger.info("Loading model in worker...")
         
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         
-        # Get model URI
-        self.model_uri = get_champion_model_uri()
-        
-        # Load model
-        self.model = mlflow.pyfunc.load_model(self.model_uri)
-        
-        logger.info(f"✓ Model loaded in worker: {self.model_uri}")
+        try:
+            # Load with alias (champion, staging, production)
+            if MODEL_VERSION.lower() in ("champion", "staging", "production"):
+                self.model_uri = f"models:/{MODEL_NAME}@{MODEL_VERSION.lower()}"
+            elif MODEL_VERSION.lower() == "latest":
+                self.model_uri = f"models:/{MODEL_NAME}/latest"
+            else:
+                # Load specific version number
+                self.model_uri = f"models:/{MODEL_NAME}/{MODEL_VERSION}"
+            
+            self.model = mlflow.pyfunc.load_model(self.model_uri)
+            logger.info(f"✅ Model loaded: {self.model_uri}")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to load model: {e}")
+            logger.error(f"💡 Ensure model is registered with alias '@{MODEL_VERSION}' in MLflow")
+            raise
 
 
 # =============================================================================
@@ -173,10 +107,7 @@ class MLModel:
 # =============================================================================
 
 class RayBatchInference:
-    """
-    Ray Data batch inference pipeline.
-    Integrated with MLflow for automatic champion model loading.
-    """
+    """Ray Data batch inference pipeline integrated with MLflow."""
     
     def __init__(
         self,
@@ -190,7 +121,7 @@ class RayBatchInference:
         
         Args:
             model_name: Model name in MLflow
-            model_version: Model version or 'champion'/'latest'
+            model_version: Model version or alias (champion, latest, etc.)
             batch_size: Batch size for processing
             num_cpus_per_task: CPUs allocated per inference task
         """
@@ -209,7 +140,7 @@ class RayBatchInference:
                 logging_level=logging.INFO
             )
         
-        logger.info("✓ Ray Data batch inference initialized")
+        logger.info("✅ Ray Data batch inference initialized")
     
     def predict_dataset(
         self,
@@ -228,13 +159,13 @@ class RayBatchInference:
         Returns:
             Dataset with predictions
         """
-        logger.info("\n" + "="*70)
+        logger.info("\n" + "=" * 70)
         logger.info("RAY DATA BATCH INFERENCE")
-        logger.info("="*70)
-        logger.info(f"Model: {self.model_name} ({self.model_version})")
+        logger.info("=" * 70)
+        logger.info(f"Model: {self.model_name}@{self.model_version}")
         logger.info(f"Dataset size: {dataset.count()} rows")
         logger.info(f"Batch size: {self.batch_size}")
-        logger.info("="*70 + "\n")
+        logger.info("=" * 70 + "\n")
         
         # Apply model to dataset
         logger.info("Running predictions...")
@@ -246,7 +177,7 @@ class RayBatchInference:
             batch_format="numpy"
         )
         
-        logger.info("✓ Predictions complete")
+        logger.info("✅ Predictions complete")
         
         # Save if output path provided
         if output_path:
@@ -264,11 +195,7 @@ class RayBatchInference:
             else:
                 raise ValueError(f"Unsupported format: {output_format}")
             
-            logger.info(f"✓ Results saved to {output_path}")
-        
-        logger.info("\n" + "="*70)
-        logger.info("BATCH INFERENCE COMPLETE")
-        logger.info("="*70 + "\n")
+            logger.info(f"✅ Results saved to {output_path}")
         
         return predictions_ds
     
@@ -278,32 +205,14 @@ class RayBatchInference:
         output_path: str,
         feature_columns: Optional[List[str]] = None
     ) -> Dataset:
-        """
-        Run batch predictions on CSV file.
-        
-        Args:
-            input_path: Path to input CSV
-            output_path: Path to save results (CSV)
-            feature_columns: List of feature columns (None = all)
-            
-        Returns:
-            Dataset with predictions
-        """
+        """Run batch predictions on CSV file."""
         logger.info(f"Loading CSV from {input_path}...")
-        
-        # Read CSV with Ray Data
         dataset = ray.data.read_csv(input_path)
         
-        # Select feature columns if specified
         if feature_columns:
             dataset = dataset.select_columns(feature_columns)
         
-        # Run predictions
-        return self.predict_dataset(
-            dataset,
-            output_path=output_path,
-            output_format="csv"
-        )
+        return self.predict_dataset(dataset, output_path, output_format="csv")
     
     def predict_parquet(
         self,
@@ -311,63 +220,30 @@ class RayBatchInference:
         output_path: str,
         feature_columns: Optional[List[str]] = None
     ) -> Dataset:
-        """
-        Run batch predictions on Parquet file(s).
-        
-        Args:
-            input_path: Path to input Parquet (file or directory)
-            output_path: Path to save results
-            feature_columns: List of feature columns (None = all)
-            
-        Returns:
-            Dataset with predictions
-        """
+        """Run batch predictions on Parquet file(s)."""
         logger.info(f"Loading Parquet from {input_path}...")
-        
-        # Read Parquet with Ray Data
         dataset = ray.data.read_parquet(input_path)
         
-        # Select feature columns if specified
         if feature_columns:
             dataset = dataset.select_columns(feature_columns)
         
-        # Run predictions
-        return self.predict_dataset(
-            dataset,
-            output_path=output_path,
-            output_format="parquet"
-        )
+        return self.predict_dataset(dataset, output_path, output_format="parquet")
     
     def predict_pandas(
         self,
         df: pd.DataFrame,
         output_path: Optional[str] = None
     ) -> pd.DataFrame:
-        """
-        Run batch predictions on Pandas DataFrame.
-        
-        Args:
-            df: Input DataFrame
-            output_path: Optional path to save results
-            
-        Returns:
-            DataFrame with predictions
-        """
-        logger.info("Converting Pandas DataFrame to Ray Dataset...")
-        
-        # Convert to Ray Dataset
+        """Run batch predictions on Pandas DataFrame."""
+        logger.info("Converting DataFrame to Ray Dataset...")
         dataset = ray.data.from_pandas(df)
         
-        # Run predictions
         predictions_ds = self.predict_dataset(dataset, output_path=None)
-        
-        # Convert back to Pandas
         result_df = predictions_ds.to_pandas()
         
-        # Combine with original DataFrame
+        # Combine with original
         result_df = pd.concat([df.reset_index(drop=True), result_df], axis=1)
         
-        # Save if output path provided
         if output_path:
             output_path = Path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -377,49 +253,14 @@ class RayBatchInference:
             elif output_path.suffix == '.parquet':
                 result_df.to_parquet(output_path, index=False)
             
-            logger.info(f"✓ Results saved to {output_path}")
+            logger.info(f"✅ Results saved to {output_path}")
         
         return result_df
-    
-    def predict_s3(
-        self,
-        input_path: str,
-        output_path: str,
-        file_format: str = "parquet"
-    ) -> Dataset:
-        """
-        Run batch predictions on S3 data.
-        
-        Args:
-            input_path: S3 path (s3://bucket/path)
-            output_path: S3 output path
-            file_format: File format ('parquet', 'csv')
-            
-        Returns:
-            Dataset with predictions
-        """
-        logger.info(f"Loading from S3: {input_path}...")
-        
-        # Read from S3
-        if file_format == "parquet":
-            dataset = ray.data.read_parquet(input_path)
-        elif file_format == "csv":
-            dataset = ray.data.read_csv(input_path)
-        else:
-            raise ValueError(f"Unsupported format: {file_format}")
-        
-        # Run predictions
-        return self.predict_dataset(
-            dataset,
-            output_path=output_path,
-            output_format=file_format
-        )
     
     def shutdown(self):
         """Shutdown Ray."""
         logger.info("Shutting down Ray...")
         ray.shutdown()
-        logger.info("✓ Shutdown complete")
 
 
 # =============================================================================
@@ -430,13 +271,13 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="Batch inference with Ray Data")
-    parser.add_argument("--input", type=str, required=True, help="Input data path")
-    parser.add_argument("--output", type=str, required=True, help="Output path")
-    parser.add_argument("--model-name", type=str, default=MODEL_NAME)
-    parser.add_argument("--model-version", type=str, default=MODEL_VERSION)
+    parser.add_argument("--input", required=True, help="Input data path")
+    parser.add_argument("--output", required=True, help="Output path")
+    parser.add_argument("--model-name", default=MODEL_NAME)
+    parser.add_argument("--model-version", default=MODEL_VERSION)
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
-    parser.add_argument("--format", type=str, default="auto", 
-                       choices=["auto", "csv", "parquet", "json"])
+    parser.add_argument("--format", default="auto", 
+                       choices=["auto", "csv", "parquet"])
     parser.add_argument("--feature-columns", nargs="+", default=None)
     
     args = parser.parse_args()
@@ -449,17 +290,14 @@ def main():
     )
     
     try:
-        # Determine input format
+        # Auto-detect format
         input_path = Path(args.input)
         
         if args.format == "auto":
-            # Auto-detect format
             if input_path.suffix == '.csv':
                 file_format = "csv"
             elif input_path.suffix in ['.parquet', '.pq']:
                 file_format = "parquet"
-            elif args.input.startswith("s3://"):
-                file_format = "parquet"  # Default for S3
             else:
                 raise ValueError(f"Cannot auto-detect format for {input_path}")
         else:
@@ -467,25 +305,13 @@ def main():
         
         # Run predictions
         if file_format == "csv":
-            pipeline.predict_csv(
-                args.input,
-                args.output,
-                feature_columns=args.feature_columns
-            )
+            pipeline.predict_csv(args.input, args.output, args.feature_columns)
         elif file_format == "parquet":
-            pipeline.predict_parquet(
-                args.input,
-                args.output,
-                feature_columns=args.feature_columns
-            )
-        elif args.input.startswith("s3://"):
-            pipeline.predict_s3(
-                args.input,
-                args.output,
-                file_format=file_format
-            )
-        else:
-            raise ValueError(f"Unsupported format: {file_format}")
+            pipeline.predict_parquet(args.input, args.output, args.feature_columns)
+        
+        logger.info("\n" + "=" * 70)
+        logger.info("✅ BATCH INFERENCE COMPLETE")
+        logger.info("=" * 70 + "\n")
     
     finally:
         pipeline.shutdown()
@@ -493,45 +319,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# =============================================================================
-# Example Usage
-# =============================================================================
-"""
-# Single machine - CSV
-python src/deployment/ray_batch.py \
-    --input data/test_data.csv \
-    --output results/predictions.csv \
-    --batch-size 1000
-
-# Single machine - Parquet
-python src/deployment/ray_batch.py \
-    --input data/large_dataset.parquet \
-    --output results/predictions.parquet \
-    --batch-size 10000
-
-# Ray cluster
-RAY_ADDRESS="ray://head-node:10001" python src/deployment/ray_batch.py \
-    --input s3://my-bucket/data.parquet \
-    --output s3://my-bucket/predictions.parquet \
-    --batch-size 50000
-
-# Python API
-from src.deployment.ray_batch import RayBatchInference
-import pandas as pd
-
-pipeline = RayBatchInference()
-
-# From Pandas
-df = pd.read_csv("data.csv")
-results = pipeline.predict_pandas(df, "predictions.csv")
-
-# From CSV
-pipeline.predict_csv("data.csv", "predictions.csv")
-
-# From Parquet
-pipeline.predict_parquet("data.parquet", "predictions.parquet")
-
-pipeline.shutdown()
-"""

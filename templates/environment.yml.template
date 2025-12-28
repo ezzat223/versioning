@@ -1,50 +1,32 @@
-name: mlops
+name: {{ project_name }}
 channels:
   - conda-forge
   - defaults
 dependencies:
-  # Python
   - python=3.11
   - pip
-  
-  # System-level optimizations
-  - mkl  # Intel Math Kernel Library for faster numpy/scipy
-  
-  # Core scientific packages
+  - mkl
   - numpy
   - pandas
   - scikit-learn
-  
-  # Visualization
   - matplotlib
   - seaborn
-  
-  # Jupyter
   - jupyter
   - ipython
   - ipykernel
-  
   - pip:
-      # MLOps tools
       - mlflow
       - dvc
       - dvc-s3
-      
-      # Deployment
+      - great-expectations
       - ray[default,serve,data]
-      
-      # Utils
       - gitpython
       - pyyaml
       - jinja2
       - pre-commit
-      
-      # Development
       - pytest
       - black
       - flake8
       - mypy
-      
-      # Cloud
       - boto3
       - psycopg2-binary

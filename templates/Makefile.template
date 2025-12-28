@@ -1,0 +1,74 @@
+SHELL = /bin/bash
+.PHONY: help setup env format lint style dvc-pull dvc-push-local dvc-push-aws train tune serve-ray mlflow-ui test precommit-all precommit-update
+
+PROJECT_NAME = {{ project_name }}
+PYTHON = python
+
+help:
+	@echo "Targets:"
+	@echo "  setup            : Run project setup script"
+	@echo "  env              : Create/Update conda env from environment.yml"
+	@echo "  format           : Format code (black, isort)"
+	@echo "  lint             : Lint code (flake8, black, isort)"
+	@echo "  style            : Format + Lint"
+	@echo "  dvc-pull         : Pull data from DVC remotes"
+	@echo "  dvc-push-local   : Push data to local DVC remote"
+	@echo "  dvc-push-aws     : Push data to AWS DVC remote"
+	@echo "  train            : Run training (dvc repro or python)"
+	@echo "  tune             : Run hyperparameter tuning"
+	@echo "  serve-ray        : Start Ray Serve application (if available)"
+	@echo "  mlflow-ui        : Start MLflow UI"
+	@echo "  test             : Run tests"
+	@echo "  precommit-all    : Run pre-commit on all files"
+	@echo "  precommit-update : Update pre-commit hooks"
+
+setup:
+	./setup.sh
+
+env:
+	conda env create -n $(PROJECT_NAME) -f environment.yml || conda env update -n $(PROJECT_NAME) -f environment.yml --prune
+
+format:
+	$(PYTHON) -m isort --profile black src/ scripts/ notebooks/ || true
+	$(PYTHON) -m black --line-length 100 src/ scripts/ notebooks/ || true
+
+lint:
+	$(PYTHON) -m flake8 src/ scripts/ --max-line-length=100 --ignore=E203,W503 || true
+	$(PYTHON) -m isort --check --profile black src/ scripts/ notebooks/ || true
+	$(PYTHON) -m black --check --line-length 100 src/ scripts/ notebooks/ || true
+
+style: format lint
+
+dvc-pull:
+	dvc pull || true
+
+dvc-push-local:
+	dvc push -r local-store || true
+
+dvc-push-aws:
+	dvc push -r aws-store || true
+
+train:
+	dvc repro || $(PYTHON) training/train.py
+
+tune:
+	$(PYTHON) training/tune.py
+
+serve-ray:
+	@if [ -f "src/deployment/ray_serve.py" ]; then \
+		$(PYTHON) src/deployment/ray_serve.py; \
+	else \
+		echo "Ray Serve script not found"; \
+	fi
+
+mlflow-ui:
+	mlflow ui --host 0.0.0.0 --port 5001
+
+test:
+	pytest -vv
+
+precommit-all:
+	pre-commit run --all-files
+
+precommit-update:
+	pre-commit autoupdate

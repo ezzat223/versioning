@@ -40,6 +40,9 @@ generate_repo:
   before_script:
   - pip install jinja2
   script:
+  - if [ -z "${PROJECT_NAME}" ]; then echo "PROJECT_NAME is required"; exit 1; fi
+  - |
+    if ! echo "${PROJECT_NAME}" | grep -Eq '^[A-Za-z0-9_.-]+$'; then echo "Invalid PROJECT_NAME: only letters, numbers, ., _, - allowed"; exit 1; fi
   - echo "🏗️ Generating new MLOps project..."
   - mkdir -p generated_projects
   - python scripts/scaffold_project.py --name ${PROJECT_NAME} --task-type ${TASK_TYPE} --data-type ${DATA_TYPE} --deployment ${DEPLOYMENT} --output-dir generated_projects

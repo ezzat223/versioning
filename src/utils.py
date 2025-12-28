@@ -100,3 +100,34 @@ def print_git_info(metadata: Dict[str, str]) -> None:
     for key, value in metadata.items():
         print(f"{key:30s}: {value}")
     print("=" * 60 + "\n")
+
+def resolve_model_uri(model_name: str, model_version: str, experiment_name: str, tracking_uri: str) -> str:
+    import mlflow
+    from mlflow.tracking import MlflowClient
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient()
+    if model_version and model_version.lower() in ("champion", "latest", "staging", "production"):
+        alias = model_version.lower()
+        if alias == "latest":
+            return f"models:/{model_name}/latest"
+        return f"models:/{model_name}@{alias}"
+    exp = mlflow.get_experiment_by_name(experiment_name)
+    if exp:
+        runs = client.search_runs(
+            experiment_ids=[exp.experiment_id],
+            filter_string="tags.model_alias = 'champion'",
+            order_by=["start_time DESC"],
+            max_results=1,
+        )
+        if runs:
+            run = runs[0]
+            return f"runs:/{run.info.run_id}/model"
+        runs = client.search_runs(
+            experiment_ids=[exp.experiment_id],
+            order_by=["start_time DESC"],
+            max_results=1,
+        )
+        if runs:
+            run = runs[0]
+            return f"runs:/{run.info.run_id}/model"
+    return f"models/{model_name}"

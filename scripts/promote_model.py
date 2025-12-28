@@ -1,7 +1,7 @@
 """
 Promote challenger model to champion and archive old champion.
+Uses MLflow Model Registry aliases for deployment.
 """
-
 import argparse
 import json
 from datetime import datetime
@@ -11,7 +11,7 @@ from mlflow.tracking import MlflowClient
 
 
 class ModelPromoter:
-    """Handle model promotion in MLflow."""
+    """Handle model promotion using MLflow aliases."""
 
     def __init__(
         self,
@@ -24,11 +24,11 @@ class ModelPromoter:
 
         Args:
             experiment_name: MLflow experiment name
-            model_name: Registered model name (optional)
+            model_name: Registered model name (optional, defaults to experiment_name)
             tracking_uri: MLflow tracking server URI
         """
         self.experiment_name = experiment_name
-        self.model_name = model_name or experiment_name.replace("-", "_")
+        self.model_name = model_name or experiment_name.replace("-exp", "-model")
 
         mlflow.set_tracking_uri(tracking_uri)
         self.client = MlflowClient()
@@ -51,7 +51,9 @@ class ModelPromoter:
 
     def promote(self) -> dict:
         """
-        Promote challenger to champion and archive old champion.
+        Promote challenger to champion using MLflow aliases.
+        
+        Uses BOTH run tags and Model Registry aliases for compatibility.
 
         Returns:
             Promotion details dictionary
@@ -77,7 +79,7 @@ class ModelPromoter:
             "experiment_name": self.experiment_name,
         }
 
-        # Archive old champion
+        # Archive old champion (run tag)
         if champion:
             print(f"Old Champion: {champion.info.run_id}")
             print("  → Archiving old champion...")
@@ -87,49 +89,65 @@ class ModelPromoter:
             self.client.set_tag(champion.info.run_id, "archived_reason", "Replaced by better model")
 
             promotion_details["archived_run_id"] = champion.info.run_id
-            print("  ✓ Old champion archived")
+            print("  ✓ Old champion archived (run tag)")
         else:
             print("No existing champion (first promotion)")
 
-        # Promote challenger to champion
+        # Promote challenger to champion (run tag)
         print("\n→ Promoting challenger to champion...")
         self.client.set_tag(challenger.info.run_id, "model_alias", "champion")
         self.client.set_tag(challenger.info.run_id, "promoted_at", datetime.now().isoformat())
         self.client.set_tag(challenger.info.run_id, "promoted_from", "challenger")
 
-        print("✓ Challenger promoted to champion")
+        print("✓ Challenger promoted to champion (run tag)")
 
-        # Register model in MLflow Model Registry (if not exists)
-        print(f"\n→ Registering model '{self.model_name}'...")
+        # Register model in MLflow Model Registry with aliases
+        print(f"\n→ Updating Model Registry aliases...")
         try:
             # Get model URI
             model_uri = f"runs:/{challenger.info.run_id}/model"
 
-            # Register model
-            model_version = mlflow.register_model(model_uri, self.model_name)
+            # Register model (or get existing)
+            try:
+                model_version = mlflow.register_model(model_uri, self.model_name)
+                print(f"  ✓ Model registered as version {model_version.version}")
+            except Exception as e:
+                # Model might already be registered
+                versions = self.client.search_model_versions(f"run_id='{challenger.info.run_id}'")
+                if versions:
+                    model_version = versions[0]
+                    print(f"  ✓ Using existing version {model_version.version}")
+                else:
+                    raise e
 
-            # Set version alias to "champion"
+            # Set 'champion' alias on new version
             self.client.set_registered_model_alias(
-                self.model_name, "champion", model_version.version
+                self.model_name, 
+                "champion", 
+                model_version.version
             )
+            print(f"  ✓ Set alias 'champion' → version {model_version.version}")
 
-            # Archive old champion version if exists
+            # Archive old champion in registry
             if champion:
                 # Find old champion version
-                versions = self.client.search_model_versions(f"run_id='{champion.info.run_id}'")
-                if versions:
-                    old_version = versions[0].version
-                    self.client.set_registered_model_alias(self.model_name, "archived", old_version)
+                old_versions = self.client.search_model_versions(f"run_id='{champion.info.run_id}'")
+                if old_versions:
+                    old_version = old_versions[0].version
+                    # Set 'archived' alias on old version
+                    self.client.set_registered_model_alias(
+                        self.model_name,
+                        "archived",
+                        old_version
+                    )
+                    print(f"  ✓ Set alias 'archived' → version {old_version}")
 
             promotion_details["model_name"] = self.model_name
             promotion_details["model_version"] = model_version.version
 
-            print(f"✓ Model registered as version {model_version.version}")
-            print(f"✓ Alias 'champion' set to version {model_version.version}")
-
         except Exception as e:
-            print(f"⚠️  Model registration failed: {e}")
-            print("   (This is OK if model registry is not configured)")
+            print(f"⚠️  Model Registry update failed: {e}")
+            print("   (Promotion succeeded with run tags, but Registry aliases not updated)")
 
         # Extract metrics for reporting
         if challenger.data.metrics:
@@ -140,7 +158,7 @@ class ModelPromoter:
         print("=" * 70)
         print(f"\nNew Champion: {challenger.info.run_id}")
         if "model_version" in promotion_details:
-            print(f"Model Version: {promotion_details['model_version']}")
+            print(f"Model Version: {promotion_details['model_version']} (alias: @champion)")
         print()
 
         return promotion_details

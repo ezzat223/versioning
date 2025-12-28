@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-MLOps Project Scaffolder
-Generates a production-ready MLOps repository based on user specifications.
-Uses Jinja2 for robust templating.
+MLOps Project Scaffolder - IMPROVED
+Generates production-ready MLOps projects with proper error handling.
 """
 
 import argparse
@@ -11,81 +10,221 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, 
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
+
 def parse_args():
-    parser = argparse.ArgumentParser(description="Scaffold a new MLOps project")
+    parser = argparse.ArgumentParser(
+        description="Scaffold a new MLOps project",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Basic supervised learning project
+  python scaffold_project.py --name my-churn-model --task-type supervised
+  
+  # Image classification with Ray Serve deployment
+  python scaffold_project.py --name image-classifier --task-type supervised \\
+      --data-type image --deployment ray-serve
+  
+  # Clustering project with no deployment
+  python scaffold_project.py --name customer-segments --task-type unsupervised \\
+      --deployment none
+        """
+    )
     
-    # Project Info
-    parser.add_argument("--name", required=True, help="Project name (e.g., my-churn-model)")
-    parser.add_argument("--output-dir", default="..", help="Parent directory for the new project")
-    
-    # Technical Decisions
-    parser.add_argument("--task-type", choices=["supervised", "unsupervised"], default="supervised", 
-                        help="Machine learning task type")
-    parser.add_argument("--data-type", choices=["tabular", "image", "database"], default="tabular",
-                        help="Primary data type")
-    parser.add_argument("--deployment", choices=["ray-serve", "ray-batch", "all", "none"], default="all",
-                        help="Deployment target")
+    parser.add_argument(
+        "--name", 
+        required=True, 
+        help="Project name (e.g., my-churn-model)"
+    )
+    parser.add_argument(
+        "--output-dir", 
+        default="..", 
+        help="Parent directory for the new project (default: ..)"
+    )
+    parser.add_argument(
+        "--task-type", 
+        choices=["supervised", "unsupervised"], 
+        default="supervised",
+        help="ML task type (default: supervised)"
+    )
+    parser.add_argument(
+        "--data-type", 
+        choices=["tabular", "image", "database"], 
+        default="tabular",
+        help="Primary data type (default: tabular)"
+    )
+    parser.add_argument(
+        "--deployment", 
+        choices=["ray-serve", "ray-batch", "all", "none"], 
+        default="all",
+        help="Deployment target (default: all)"
+    )
     
     return parser.parse_args()
 
-def create_directory_structure(root_path: Path):
+
+def validate_project_name(name: str) -> None:
+    """Validate project name."""
+    if not name:
+        raise ValueError("Project name cannot be empty")
+    
+    # Check for invalid characters
+    invalid_chars = set(' <>:"/\\|?*')
+    if any(c in name for c in invalid_chars):
+        raise ValueError(
+            f"Project name contains invalid characters. "
+            f"Avoid: {' '.join(invalid_chars)}"
+        )
+    
+    # Recommend kebab-case
+    if '_' in name:
+        logger.warning(
+            f"Project name '{name}' uses underscores. "
+            f"Consider kebab-case: '{name.replace('_', '-')}'"
+        )
+
+
+def create_directory_structure(root_path: Path) -> None:
     """Create the standard directory structure."""
     dirs = [
-        "data",
+        "data/raw",
+        "data/external",
+        "data/processed",
         "scripts",
-        "src",
         "src/data_loaders",
         "src/deployment",
-        "templates",
         "training",
-        "notebooks"
+        "notebooks",
     ]
     
     for d in dirs:
-        (root_path / d).mkdir(parents=True, exist_ok=True)
+        try:
+            (root_path / d).mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Failed to create directory {d}: {e}")
+            raise
     
-    # Create empty __init__.py files
-    (root_path / "src" / "__init__.py").touch()
-    (root_path / "src" / "data_loaders" / "__init__.py").touch()
-    (root_path / "src" / "deployment" / "__init__.py").touch()
+    # Create __init__.py files
+    init_files = [
+        "src/__init__.py",
+        "src/data_loaders/__init__.py",
+        "src/deployment/__init__.py",
+    ]
+    
+    for init_file in init_files:
+        try:
+            (root_path / init_file).touch()
+        except Exception as e:
+            logger.error(f"Failed to create {init_file}: {e}")
+            raise
 
-def copy_file(src: Path, dst: Path):
-    """Copy a file if source exists."""
-    if src.exists():
-        shutil.copy2(src, dst)
-    else:
+
+def copy_file_safe(src: Path, dst: Path) -> bool:
+    """
+    Safely copy a file.
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    if not src.exists():
         logger.warning(f"Source file not found: {src}")
+        return False
+    
+    try:
+        # Create parent directory if needed
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        logger.debug(f"Copied {src.name} → {dst}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to copy {src} to {dst}: {e}")
+        return False
 
-def render_template(env, template_name, context, output_path):
-    """Render a Jinja2 template to a file."""
+
+def copy_directory_safe(src: Path, dst: Path) -> bool:
+    """
+    Safely copy a directory recursively.
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    if not src.exists() or not src.is_dir():
+        logger.warning(f"Source directory not found: {src}")
+        return False
+    
+    try:
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+        logger.debug(f"Copied directory {src.name} → {dst}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to copy directory {src} to {dst}: {e}")
+        return False
+
+
+def render_template_safe(env: Environment, template_name: str, 
+                         context: dict, output_path: Path) -> bool:
+    """
+    Safely render a Jinja2 template.
+    
+    Returns:
+        True if successful, False otherwise
+    """
     try:
         template = env.get_template(template_name)
         content = template.render(**context)
+        
+        # Ensure parent directory exists
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
         with open(output_path, "w") as f:
             f.write(content)
-        logger.info(f"Rendered {template_name} to {output_path}")
+        
+        logger.info(f"✓ Rendered {template_name}")
+        return True
+        
+    except TemplateNotFound:
+        logger.error(f"Template not found: {template_name}")
+        return False
     except Exception as e:
         logger.error(f"Failed to render {template_name}: {e}")
+        return False
+
 
 def scaffold_project(args):
-    current_dir = Path(os.getcwd())
-    target_dir = Path(args.output_dir) / args.name
+    """Main scaffolding logic."""
+    current_dir = Path.cwd()
+    target_dir = Path(args.output_dir).resolve() / args.name
+    
+    # Validate
+    validate_project_name(args.name)
     
     if target_dir.exists():
-        logger.error(f"Target directory {target_dir} already exists!")
+        logger.error(f"Target directory already exists: {target_dir}")
+        logger.info("Please choose a different name or remove the existing directory")
         sys.exit(1)
-        
-    logger.info(f"Creating project '{args.name}' at {target_dir}...")
+    
+    logger.info(f"Creating project '{args.name}' at {target_dir}")
+    logger.info(f"  Task: {args.task_type}")
+    logger.info(f"  Data: {args.data_type}")
+    logger.info(f"  Deployment: {args.deployment}")
+    
+    # Create structure
     create_directory_structure(target_dir)
     
-    # Setup Jinja2 Environment
-    env = Environment(loader=FileSystemLoader(current_dir / "templates"))
+    # Setup Jinja2
+    templates_dir = current_dir / "templates"
+    if not templates_dir.exists():
+        logger.error(f"Templates directory not found: {templates_dir}")
+        sys.exit(1)
+    
+    env = Environment(loader=FileSystemLoader(templates_dir))
     
     # Context for templates
     context = {
@@ -95,31 +234,63 @@ def scaffold_project(args):
         "deployment": args.deployment
     }
     
-    # -------------------------------------------------------------------------
-    # 1. CORE FILES
-    # -------------------------------------------------------------------------
-    copy_file(current_dir / "requirements.txt", target_dir / "requirements.txt")
-    copy_file(current_dir / "environment.yml", target_dir / "environment.yml")
-    copy_file(current_dir / ".pre-commit-config.yaml", target_dir / ".pre-commit-config.yaml")
-    copy_file(current_dir / "src/utils.py", target_dir / "src/utils.py")
-    copy_file(current_dir / "src/core", target_dir / "src/core") # Directory copy if exists
+    # Track success
+    failed_operations = []
     
-    # Setup Script
-    copy_file(current_dir / "templates/setup.sh", target_dir / "setup.sh")
-    os.chmod(target_dir / "setup.sh", 0o755) # Make executable
+    # -------------------------------------------------------------------------
+    # CORE FILES
+    # -------------------------------------------------------------------------
+    logger.info("\n→ Setting up core files...")
     
-    # Scripts
-    for script in (current_dir / "scripts").glob("*.py"):
-        if script.name != "scaffold_project.py": # Don't copy the scaffolder itself
-            copy_file(script, target_dir / "scripts" / script.name)
-            
+    core_files = [
+        ("requirements.txt", "requirements.txt"),
+        ("pyproject.toml", "pyproject.toml"),
+        (".gitignore", ".gitignore"),
+        ("src/utils.py", "src/utils.py"),
+    ]
+    
+    for src_name, dst_name in core_files:
+        src = current_dir / src_name
+        dst = target_dir / dst_name
+        if not copy_file_safe(src, dst):
+            failed_operations.append(f"Copy {src_name}")
+    
+    # Templates
+    if not render_template_safe(env, "environment.yml.template", context, 
+                                target_dir / "environment.yml"):
+        failed_operations.append("Render environment.yml")
+    
+    if not render_template_safe(env, "setup.sh", context, 
+                                target_dir / "setup.sh"):
+        failed_operations.append("Render setup.sh")
+    else:
+        # Make executable
+        try:
+            os.chmod(target_dir / "setup.sh", 0o755)
+        except Exception as e:
+            logger.warning(f"Could not make setup.sh executable: {e}")
+    
     # -------------------------------------------------------------------------
-    # 2. DATA LOADERS
+    # SCRIPTS
     # -------------------------------------------------------------------------
-    logger.info(f"Setting up data loaders for {args.data_type}...")
+    logger.info("\n→ Setting up scripts...")
+    
+    scripts_dir = current_dir / "scripts"
+    if scripts_dir.exists():
+        for script in scripts_dir.glob("*.py"):
+            if script.name != "scaffold_project.py":
+                if not copy_file_safe(script, target_dir / "scripts" / script.name):
+                    failed_operations.append(f"Copy script {script.name}")
+    
+    # -------------------------------------------------------------------------
+    # DATA LOADERS
+    # -------------------------------------------------------------------------
+    logger.info(f"\n→ Setting up data loaders for {args.data_type}...")
     
     # Always copy base loader
-    copy_file(current_dir / "src/data_loaders/base_loader.py", target_dir / "src/data_loaders/base_loader.py")
+    base_loader = current_dir / "src/data_loaders/base_loader.py"
+    if not copy_file_safe(base_loader, target_dir / "src/data_loaders/base_loader.py"):
+        failed_operations.append("Copy base_loader.py")
     
     # Copy specific loader
     loader_map = {
@@ -128,80 +299,170 @@ def scaffold_project(args):
         "database": "database_loader.py"
     }
     
-    selected_loader = loader_map.get(args.data_type)
-    if selected_loader:
-        copy_file(current_dir / "src/data_loaders" / selected_loader, 
-                 target_dir / "src/data_loaders" / selected_loader)
+    loader_file = loader_map.get(args.data_type)
+    if loader_file:
+        src = current_dir / "src/data_loaders" / loader_file
+        dst = target_dir / "src/data_loaders" / loader_file
+        if not copy_file_safe(src, dst):
+            failed_operations.append(f"Copy {loader_file}")
     
     # -------------------------------------------------------------------------
-    # 3. TRAINING SCRIPT
+    # TRAINING SCRIPT
     # -------------------------------------------------------------------------
-    logger.info(f"Setting up training script for {args.task_type}...")
+    logger.info(f"\n→ Setting up training for {args.task_type}...")
     
-    template_name = f"train_{args.task_type}.py"
-    src_template = current_dir / "templates" / template_name
+    train_template = f"train_{args.task_type}.py"
+    src_template = templates_dir / train_template
     dst_train = target_dir / "training" / "train.py"
     
     if src_template.exists():
-        copy_file(src_template, dst_train)
+        if not copy_file_safe(src_template, dst_train):
+            failed_operations.append(f"Copy {train_template}")
     else:
-        logger.error(f"Template {template_name} not found!")
+        logger.error(f"Training template not found: {train_template}")
+        failed_operations.append(f"Find {train_template}")
+    
+    # Hyperparameter tuning
+    tuning_src = templates_dir / "hyperparam_tuning.py"
+    if tuning_src.exists():
+        copy_file_safe(tuning_src, target_dir / "training" / "tune.py")
+    
+    # -------------------------------------------------------------------------
+    # DEPLOYMENT
+    # -------------------------------------------------------------------------
+    if args.deployment != "none":
+        logger.info(f"\n→ Setting up deployment for {args.deployment}...")
         
-    # Copy other templates to templates/ dir for reference
-    for t in (current_dir / "templates").glob("*"):
-        if not t.name.endswith(".template"): # Don't copy .template files to templates dir
-            copy_file(t, target_dir / "templates" / t.name)
-
-    # -------------------------------------------------------------------------
-    # 4. DEPLOYMENT
-    # -------------------------------------------------------------------------
-    logger.info(f"Setting up deployment for {args.deployment}...")
-    
-    copy_file(current_dir / "src/deployment/manager.py", target_dir / "src/deployment/manager.py")
-    copy_file(current_dir / "src/deployment/deployment_configs.yaml", target_dir / "src/deployment/deployment_configs.yaml")
-    
-    if args.deployment in ["ray-serve", "all"]:
-        copy_file(current_dir / "src/deployment/ray_serve.py", target_dir / "src/deployment/ray_serve.py")
-        copy_file(current_dir / "deployment/Dockerfile.ray", target_dir / "Dockerfile.ray")
+        if args.deployment in ["ray-serve", "all"]:
+            serve_src = current_dir / "src/deployment/ray_serve.py"
+            dockerfile = current_dir / "deployment/Dockerfile.ray"
+            
+            if not copy_file_safe(serve_src, target_dir / "src/deployment/ray_serve.py"):
+                failed_operations.append("Copy ray_serve.py")
+            if not copy_file_safe(dockerfile, target_dir / "Dockerfile.ray"):
+                failed_operations.append("Copy Dockerfile.ray")
         
-    if args.deployment in ["ray-batch", "all"]:
-        copy_file(current_dir / "src/deployment/ray_batch.py", target_dir / "src/deployment/ray_batch.py")
-
-    # -------------------------------------------------------------------------
-    # 5. RENDER TEMPLATES
-    # -------------------------------------------------------------------------
-    logger.info("Rendering configuration files...")
+        if args.deployment in ["ray-batch", "all"]:
+            batch_src = current_dir / "src/deployment/ray_batch.py"
+            if not copy_file_safe(batch_src, target_dir / "src/deployment/ray_batch.py"):
+                failed_operations.append("Copy ray_batch.py")
     
-    render_template(env, "params.yaml.template", context, target_dir / "params.yaml")
-    render_template(env, "dvc.yaml.template", context, target_dir / "dvc.yaml")
-    render_template(env, "gitlab-ci.yml.template", context, target_dir / ".gitlab-ci.yml")
+    # -------------------------------------------------------------------------
+    # CONFIGURATION FILES
+    # -------------------------------------------------------------------------
+    logger.info("\n→ Rendering configuration files...")
     
-    # README (Inline template)
+    config_templates = [
+        ("params.yaml.template", "params.yaml"),
+        ("dvc.yaml.template", "dvc.yaml"),
+        ("gitlab-ci.yml.template", ".gitlab-ci.yml"),
+        ("Makefile.template", "Makefile"),
+    ]
+    
+    for template_name, output_name in config_templates:
+        if not render_template_safe(env, template_name, context, 
+                                    target_dir / output_name):
+            failed_operations.append(f"Render {template_name}")
+    
+    # -------------------------------------------------------------------------
+    # README
+    # -------------------------------------------------------------------------
     readme_content = """# {{ project_name }}
 
-Generated MLOps Project.
+MLOps Project - Auto-generated
 
 ## Overview
-- **Task**: {{ task_type }}
-- **Data**: {{ data_type }}
+- **Task Type**: {{ task_type }}
+- **Data Type**: {{ data_type }}
 - **Deployment**: {{ deployment }}
 
-## Setup
-1. `./setup.sh` - Initializes Conda env, DVC, and Git hooks.
+## Quick Start
 
-## Training
-Run: `dvc repro`
+### 1. Setup Environment
+```bash
+./setup.sh
+```
+
+### 2. Train Model
+```bash
+conda activate {{ project_name }}
+dvc repro
+```
+
+### 3. View Results
+```bash
+mlflow ui
+# Open http://localhost:5000
+```
+
+## Project Structure
+```
+├── data/               # Data files (tracked by DVC)
+├── src/                # Source code
+│   ├── data_loaders/   # Data loading utilities
+│   └── deployment/     # Deployment code
+├── training/           # Training scripts
+├── scripts/            # MLOps automation scripts
+├── notebooks/          # Jupyter notebooks
+└── great_expectations/ # Data validation
+```
+
+## MLflow Tracking
+- Experiment: `{{ project_name }}-exp`
+- Model Registry: `{{ project_name }}-model`
+- Tracking URI: `http://localhost:5001`
+
+## CI/CD
+This project uses GitLab CI/CD with:
+- Automatic training on commits to main
+- Champion vs Challenger comparison
+- Auto-promotion when challenger is better
+
+## Customization
+1. Update `params.yaml` with your hyperparameters
+2. Modify `training/train.py` with your model
+3. Configure Great Expectations for data validation
+4. Update `.gitlab-ci.yml` for your deployment needs
+
+## Documentation
+- [MLflow Docs](https://mlflow.org/docs/latest/index.html)
+- [DVC Docs](https://dvc.org/doc)
+- [Great Expectations Docs](https://docs.greatexpectations.io/)
 """
-    # Use Jinja to render inline string
+    
     readme_template = env.from_string(readme_content)
     with open(target_dir / "README.md", "w") as f:
         f.write(readme_template.render(**context))
+    
+    # -------------------------------------------------------------------------
+    # SUMMARY
+    # -------------------------------------------------------------------------
+    print("\n" + "=" * 70)
+    print("✅ PROJECT SCAFFOLDED SUCCESSFULLY")
+    print("=" * 70)
+    
+    if failed_operations:
+        print("\n⚠️  Some operations failed:")
+        for op in failed_operations:
+            print(f"  - {op}")
+        print("\nProject created but may be incomplete. Check logs above.")
+    
+    print(f"\nProject location: {target_dir}")
+    print("\nNext steps:")
+    print(f"  1. cd {target_dir}")
+    print("  2. ./setup.sh")
+    print("  3. conda activate", args.name)
+    print("  4. dvc repro")
+    print("\nHappy MLOps! 🚀\n")
 
-    logger.info(f"✓ Project scaffolded successfully at {target_dir}")
-    logger.info("Next steps:")
-    logger.info(f"  cd {target_dir}")
-    logger.info("  ./setup.sh")
 
 if __name__ == "__main__":
-    args = parse_args()
-    scaffold_project(args)
+    try:
+        args = parse_args()
+        scaffold_project(args)
+    except KeyboardInterrupt:
+        logger.info("\nScaffolding cancelled by user")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"\nScaffolding failed: {e}")
+        sys.exit(1)
