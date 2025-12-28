@@ -246,6 +246,7 @@ def scaffold_project(args):
         ("requirements.txt", "requirements.txt"),
         ("pyproject.toml", "pyproject.toml"),
         (".gitignore", ".gitignore"),
+        (".pre-commit-config.yaml", ".pre-commit-config.yaml"),
         ("src/utils.py", "src/utils.py"),
     ]
     

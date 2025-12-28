@@ -37,10 +37,15 @@ echo "------------------------------------------"
 
 if [ ! -d ".git" ]; then
     print_warning "Not a git repository. Initializing..."
-    git init
+    git init -b main
     print_success "Git initialized"
 else
     print_success "Git repository detected"
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    if [ "$CURRENT_BRANCH" = "master" ]; then
+        git branch -M main
+        print_success "Default branch set to 'main'"
+    fi
 fi
 
 # =============================================================================
@@ -101,6 +106,7 @@ if ! command -v pre-commit &> /dev/null; then
     pip install pre-commit
 fi
 
+pre-commit autoupdate || true
 # Install pre-commit hooks (handles pre-commit, pre-push stages)
 pre-commit install --install-hooks
 
@@ -189,7 +195,7 @@ echo "------------------------------------------"
 if [ ! -d ".dvc" ]; then
     dvc init
     print_success "DVC initialized"
-else:
+else
     print_success "DVC already initialized"
 fi
 
@@ -233,6 +239,21 @@ mkdir -p reports/figures
 mkdir -p src
 
 print_success "Directory structure verified"
+
+# =============================================================================
+# 8. Create Initial Git Commit
+# =============================================================================
+echo ""
+echo "------------------------------------------"
+echo "Creating initial Git commit..."
+echo "------------------------------------------"
+
+git add -A || true
+if git diff --cached --quiet; then
+    print_info "No changes to commit"
+else
+    git commit -m "Initial commit (scaffolded project)" || print_warning "Initial commit skipped (configure git user.name/email)"
+fi
 
 # =============================================================================
 # Final Summary
