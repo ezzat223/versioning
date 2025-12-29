@@ -1,5 +1,5 @@
 # DVC Parameters
-# 
+#
 # This file is TRACKED by git, so:
 # - Changes to these params will trigger DVC pipeline re-runs
 # - Good for production/baseline configurations
@@ -22,7 +22,7 @@ data:
 {% if task_type == 'supervised' %}
 supervised:
   target_column: "target"
-  
+
   # RandomForest Example
   model:
     type: "random_forest"

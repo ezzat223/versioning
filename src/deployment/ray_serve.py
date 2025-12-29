@@ -2,13 +2,14 @@
 Ray Serve deployment for online inference.
 Fully integrated with MLflow - loads champion model automatically.
 """
-import os
-import logging
-from typing import List, Dict
 
-from ray import serve
+import logging
+import os
+from typing import Dict, List
+
 import mlflow
 from fastapi import FastAPI
+from ray import serve
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -37,17 +38,17 @@ app = FastAPI()
 @serve.ingress(app)
 class MLFlowDeployment:
     """Ray Serve deployment that loads models from MLflow."""
-    
+
     def __init__(self):
         """Initialize and load model from MLflow."""
         self.model = None
         self.model_uri = None
         self._load_model()
-    
+
     def _load_model(self):
         """Load model from MLflow using champion alias."""
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-        
+
         try:
             # Always try to load with alias first (champion, staging, production)
             if MODEL_VERSION.lower() in ("champion", "staging", "production"):
@@ -60,45 +61,45 @@ class MLFlowDeployment:
                 # Load specific version number
                 self.model_uri = f"models:/{MODEL_NAME}/{MODEL_VERSION}"
                 logger.info(f"Loading model version: {self.model_uri}")
-            
+
             self.model = mlflow.pyfunc.load_model(self.model_uri)
             logger.info(f"✅ Model loaded successfully: {self.model_uri}")
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to load model: {e}")
             logger.info("💡 Ensure model is registered with alias '@champion' in MLflow")
             logger.info("   Or specify a version number via MODEL_VERSION env var")
             self.model = None
-    
+
     @app.post("/predict")
     async def predict(self, features: List[List[float]]) -> Dict:
         """
         Make predictions on input features.
-        
+
         Args:
             features: List of feature vectors
-            
+
         Returns:
             Dictionary with predictions and metadata
         """
         if not self.model:
             return {
                 "error": "Model not loaded",
-                "message": "Model is not available. Check logs for details."
+                "message": "Model is not available. Check logs for details.",
             }
-        
+
         try:
             predictions = self.model.predict(features)
             return {
                 "predictions": predictions.tolist(),
                 "model_uri": self.model_uri,
                 "model_name": MODEL_NAME,
-                "model_version": MODEL_VERSION
+                "model_version": MODEL_VERSION,
             }
         except Exception as e:
             logger.error(f"Prediction error: {e}")
             return {"error": str(e)}
-    
+
     @app.get("/health")
     def health(self) -> Dict:
         """Health check endpoint."""
@@ -107,9 +108,9 @@ class MLFlowDeployment:
             "model_loaded": self.model is not None,
             "model_uri": self.model_uri,
             "model_name": MODEL_NAME,
-            "model_version": MODEL_VERSION
+            "model_version": MODEL_VERSION,
         }
-    
+
     @app.get("/info")
     def info(self) -> Dict:
         """Get deployment information."""
@@ -118,10 +119,7 @@ class MLFlowDeployment:
             "model_version": MODEL_VERSION,
             "model_uri": self.model_uri,
             "mlflow_uri": MLFLOW_TRACKING_URI,
-            "replicas": {
-                "min": SERVE_MIN_REPLICAS,
-                "max": SERVE_MAX_REPLICAS
-            }
+            "replicas": {"min": SERVE_MIN_REPLICAS, "max": SERVE_MAX_REPLICAS},
         }
 
 

@@ -2,6 +2,7 @@
 Promote challenger model to champion and archive old champion.
 Uses MLflow Model Registry aliases for deployment.
 """
+
 import argparse
 import json
 from datetime import datetime
@@ -52,7 +53,7 @@ class ModelPromoter:
     def promote(self) -> dict:
         """
         Promote challenger to champion using MLflow aliases.
-        
+
         Uses BOTH run tags and Model Registry aliases for compatibility.
 
         Returns:
@@ -102,7 +103,7 @@ class ModelPromoter:
         print("✓ Challenger promoted to champion (run tag)")
 
         # Register model in MLflow Model Registry with aliases
-        print(f"\n→ Updating Model Registry aliases...")
+        print("\n→ Updating Model Registry aliases...")
         try:
             # Get model URI
             model_uri = f"runs:/{challenger.info.run_id}/model"
@@ -122,9 +123,7 @@ class ModelPromoter:
 
             # Set 'champion' alias on new version
             self.client.set_registered_model_alias(
-                self.model_name, 
-                "champion", 
-                model_version.version
+                self.model_name, "champion", model_version.version
             )
             print(f"  ✓ Set alias 'champion' → version {model_version.version}")
 
@@ -135,11 +134,7 @@ class ModelPromoter:
                 if old_versions:
                     old_version = old_versions[0].version
                     # Set 'archived' alias on old version
-                    self.client.set_registered_model_alias(
-                        self.model_name,
-                        "archived",
-                        old_version
-                    )
+                    self.client.set_registered_model_alias(self.model_name, "archived", old_version)
                     print(f"  ✓ Set alias 'archived' → version {old_version}")
 
             promotion_details["model_name"] = self.model_name

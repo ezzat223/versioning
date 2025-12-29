@@ -8,7 +8,7 @@ variables:
   DOCKER_IMAGE_NAME: "{{ project_name }}-service"
   MODEL_NAME: "{{ project_name }}-model"
   EXPERIMENT_NAME: "{{ project_name }}-exp"
-  
+
   # Project-specific (customize these)
   DATA_PATH: "data/processed/dataset.csv"
   TARGET_COLUMN: "target"
@@ -41,16 +41,16 @@ code_quality:
     # Formatting
     - echo "🎨 Checking code formatting..."
     - black --check src/ scripts/ || (echo "Run: black src/ scripts/" && exit 1)
-    
+
     # Linting
     - echo "🔍 Linting..."
     - flake8 src/ scripts/ --max-line-length=100 --ignore=E203,W503 || true
-    
+
     # Security (just the essentials)
     - echo "🔒 Security scan..."
     - bandit -r src/ scripts/ -ll || true
     - safety check || true
-    
+
     - echo "✅ Code quality checks complete"
   rules:
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
@@ -68,10 +68,10 @@ data_validation:
   script:
     - echo "📊 Validating data quality..."
     - conda run -n {{ project_name }} dvc pull || echo "⚠️ DVC pull failed"
-    
+
     # Single validation script with Great Expectations
     - conda run -n {{ project_name }} python scripts/validate_data.py --data ${DATA_PATH}
-    
+
     - echo "✅ Validation complete"
   rules:
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
@@ -92,13 +92,13 @@ train_challenger:
   script:
     - echo "🚀 Training challenger model..."
     - conda run -n {{ project_name }} dvc pull
-    
+
     # Train using DVC pipeline
     - conda run -n {{ project_name }} dvc repro
-    
+
     # Tag as challenger
     - conda run -n {{ project_name }} python scripts/tag_challenger.py --experiment-name ${EXPERIMENT_NAME}
-    
+
     - echo "✅ Challenger trained"
   artifacts:
     paths:
@@ -121,7 +121,7 @@ evaluate_models:
     - conda env create -f environment.yml || conda env update -f environment.yml
   script:
     - echo "📊 Comparing models..."
-    
+
     # Compare challenger vs champion
     - |
       conda run -n {{ project_name }} python scripts/compare_models.py \
@@ -129,13 +129,13 @@ evaluate_models:
         --metric ${PRIMARY_METRIC} \
         --improvement-threshold 0.01 \
         --output comparison.json
-    
+
     # Generate markdown report using Python
     - |
       conda run -n {{ project_name }} python scripts/generate_cml_report.py \
         --comparison comparison.json \
         --output report.md
-    
+
     # Post report to MR using CML
     - |
       if [ "$CI_MERGE_REQUEST_IID" != "" ]; then
@@ -144,7 +144,7 @@ evaluate_models:
         echo "Not in MR context, skipping CML comment"
         cat report.md
       fi
-    
+
     # Decide on promotion
     - |
       PROMOTE=$(conda run -n {{ project_name }} python -c "
@@ -154,7 +154,7 @@ evaluate_models:
       print('yes' if data.get('promote_challenger', False) else 'no')
       ")
       echo "PROMOTE_MODEL=${PROMOTE}" >> promote.env
-      
+
       if [ "$PROMOTE" == "yes" ]; then
         echo "✅ Will promote challenger"
       else
@@ -201,17 +201,17 @@ build_docker:
   script:
     - echo "🐳 Building deployment image..."
     - docker login -u $DOCKER_HUB_USERNAME -p $DOCKER_HUB_TOKEN
-    
+
     - |
       docker build \
         -f deployment/Dockerfile.ray \
         -t ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA} \
         -t ${DOCKER_IMAGE_NAME}:latest \
         .
-    
+
     - docker push ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}
     - docker push ${DOCKER_IMAGE_NAME}:latest
-    
+
     - echo "✅ Image pushed"
   rules:
     - if: '$PROMOTE_MODEL == "yes" && $CI_COMMIT_BRANCH == "main"'

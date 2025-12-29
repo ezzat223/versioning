@@ -138,12 +138,12 @@ cat > .git/hooks/post-checkout << 'EOF'
 # Only run if checking out a commit (not just switching branches with same files)
 if [ "$3" == "1" ]; then
     # echo "🔄 Syncing environment and data after checkout..."
-    # 
+    #
     # # Check if conda is available
     # if command -v conda &> /dev/null; then
     #     # Get environment name from environment.yml
     #     ENV_NAME=$(grep 'name:' environment.yml | head -1 | awk '{print $2}')
-    #     
+    #
     #     if [ ! -z "$ENV_NAME" ]; then
     #         # Update conda environment to match checked out environment.yml
     #         echo "📦 Updating conda environment: $ENV_NAME"
@@ -157,7 +157,7 @@ if [ "$3" == "1" ]; then
         echo "📊 Syncing DVC data..."
         dvc checkout 2>/dev/null || echo "⚠️  DVC checkout skipped (no changes or no data)"
     fi
-    
+
     echo "✅ Reproducibility sync complete"
     echo "💡 Run 'dvc repro' to reproduce the pipeline"
 fi

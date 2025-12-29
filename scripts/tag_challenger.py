@@ -4,13 +4,12 @@ Used in CI/CD pipeline after training.
 """
 
 import argparse
+
 import mlflow
 from mlflow.tracking import MlflowClient
 
 
-def tag_latest_run_as_challenger(
-    experiment_name: str, tracking_uri: str = "http://127.0.0.1:5001"
-):
+def tag_latest_run_as_challenger(experiment_name: str, tracking_uri: str = "http://127.0.0.1:5001"):
     """Tag the most recent run as challenger."""
 
     mlflow.set_tracking_uri(tracking_uri)
@@ -43,8 +42,12 @@ def tag_latest_run_as_challenger(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tag latest run as challenger")
     parser.add_argument("--experiment-name", type=str, required=True, help="MLflow experiment name")
-    parser.add_argument("--tracking-uri", type=str, default="http://127.0.0.1:5001", help="MLflow tracking URI")
-    
+    parser.add_argument(
+        "--tracking-uri", type=str, default="http://127.0.0.1:5001", help="MLflow tracking URI"
+    )
+
     args = parser.parse_args()
-    
-    tag_latest_run_as_challenger(experiment_name=args.experiment_name, tracking_uri=args.tracking_uri)
+
+    tag_latest_run_as_challenger(
+        experiment_name=args.experiment_name, tracking_uri=args.tracking_uri
+    )

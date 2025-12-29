@@ -2,11 +2,13 @@
 Image data loader for computer vision tasks.
 Supports classification (supervised) and feature extraction (unsupervised).
 """
+
+from pathlib import Path
+from typing import Callable, Optional, Tuple
+
+import mlflow
 import numpy as np
 import pandas as pd
-import mlflow
-from pathlib import Path
-from typing import Tuple, Optional, Callable
 from PIL import Image
 from sklearn.model_selection import train_test_split
 
@@ -16,9 +18,9 @@ from .base_loader import BaseDataLoader
 class ImageDataLoader(BaseDataLoader):
     """
     Data loader for image datasets.
-    
+
     Supports two structures:
-    
+
     1. Directory structure (supervised classification):
        data/
          train/
@@ -27,17 +29,17 @@ class ImageDataLoader(BaseDataLoader):
              img2.jpg
            class_b/
              img3.jpg
-        
+
     2. CSV with paths (supervised or unsupervised):
        image_path,label
        data/img1.jpg,cat
        data/img2.jpg,dog
-       
+
     3. Directory of images (unsupervised):
        data/
          img1.jpg
          img2.jpg
-    
+
     Examples:
         # Classification from directory
         loader = ImageDataLoader(
@@ -45,7 +47,7 @@ class ImageDataLoader(BaseDataLoader):
             structure_type="directory",
             target_column=None  # Classes from folder names
         )
-        
+
         # From CSV
         loader = ImageDataLoader(
             data_path="data/manifest.csv",
@@ -53,7 +55,7 @@ class ImageDataLoader(BaseDataLoader):
             target_column="label",
             image_column="path"
         )
-        
+
         # Unsupervised (feature extraction)
         loader = ImageDataLoader(
             data_path="data/unlabeled",
@@ -61,7 +63,7 @@ class ImageDataLoader(BaseDataLoader):
             target_column=None
         )
     """
-    
+
     def __init__(
         self,
         data_path: str,
@@ -73,12 +75,12 @@ class ImageDataLoader(BaseDataLoader):
         random_state: int = 42,
         image_size: Tuple[int, int] = (224, 224),
         transform: Optional[Callable] = None,
-        valid_extensions: Tuple[str, ...] = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff'),
-        auto_log_mlflow: bool = True
+        valid_extensions: Tuple[str, ...] = (".jpg", ".jpeg", ".png", ".bmp", ".tiff"),
+        auto_log_mlflow: bool = True,
     ):
         """
         Initialize image data loader.
-        
+
         Args:
             data_path: Path to images directory or CSV file
             structure_type: 'directory' or 'csv'
@@ -97,22 +99,22 @@ class ImageDataLoader(BaseDataLoader):
             target_column=target_column,
             test_size=test_size,
             validation_size=validation_size,
-            random_state=random_state
+            random_state=random_state,
         )
-        
+
         self.structure_type = structure_type
         self.image_column = image_column
         self.image_size = image_size
         self.transform = transform
         self.valid_extensions = valid_extensions
         self.auto_log_mlflow = auto_log_mlflow
-        
+
         # Build image manifest
         self.manifest = self._build_manifest()
-        
+
         # Determine if supervised (has labels)
-        self.is_supervised = 'label' in self.manifest.columns
-    
+        self.is_supervised = "label" in self.manifest.columns
+
     def _build_manifest(self) -> pd.DataFrame:
         """Build manifest DataFrame with image paths and labels."""
         if self.structure_type == "directory":
@@ -121,84 +123,87 @@ class ImageDataLoader(BaseDataLoader):
             return self._build_from_csv()
         else:
             raise ValueError(f"Unknown structure_type: {self.structure_type}")
-    
+
     def _build_from_directory(self) -> pd.DataFrame:
         """
         Build manifest from directory structure.
-        
+
         If subdirectories exist, treat as classes (supervised).
         Otherwise, treat as unlabeled images (unsupervised).
         """
         data_path = Path(self.data_path)
-        
+
         if not data_path.exists():
             raise FileNotFoundError(f"Directory not found: {data_path}")
-        
+
         # Check if there are subdirectories (class folders)
         subdirs = [d for d in data_path.iterdir() if d.is_dir()]
-        
+
         records = []
-        
+
         if subdirs:
             # Supervised: subdirectories are classes
             print(f"Found {len(subdirs)} class folders")
             for class_dir in subdirs:
                 class_name = class_dir.name
-                for img_path in class_dir.rglob('*'):
+                for img_path in class_dir.rglob("*"):
                     if img_path.suffix.lower() in self.valid_extensions:
-                        records.append({
-                            'image_path': str(img_path),
-                            'label': class_name
-                        })
+                        records.append({"image_path": str(img_path), "label": class_name})
         else:
             # Unsupervised: flat directory of images
             print("No class folders found - treating as unsupervised")
-            for img_path in data_path.rglob('*'):
+            for img_path in data_path.rglob("*"):
                 if img_path.suffix.lower() in self.valid_extensions:
-                    records.append({
-                        'image_path': str(img_path)
-                    })
-        
+                    records.append({"image_path": str(img_path)})
+
         if not records:
             raise ValueError(f"No images found in {data_path}")
-        
+
         return pd.DataFrame(records)
-    
+
     def _build_from_csv(self) -> pd.DataFrame:
         """Build manifest from CSV file."""
         df = pd.read_csv(self.data_path)
-        
+
         if self.image_column not in df.columns:
             raise ValueError(
                 f"Image column '{self.image_column}' not found in CSV.\n"
                 f"Available: {df.columns.tolist()}"
             )
-        
+
         # Rename to standardized column names
-        manifest = df.rename(columns={self.image_column: 'image_path'})
-        
+        manifest = df.rename(columns={self.image_column: "image_path"})
+
         if self.target_column and self.target_column in df.columns:
-            manifest = manifest.rename(columns={self.target_column: 'label'})
-        
+            manifest = manifest.rename(columns={self.target_column: "label"})
+
         # Validate image paths exist
         missing = []
         for _, row in manifest.iterrows():
-            if not Path(row['image_path']).exists():
-                missing.append(row['image_path'])
-        
+            if not Path(row["image_path"]).exists():
+                missing.append(row["image_path"])
+
         if missing:
             print(f"⚠️  Warning: {len(missing)} image files not found")
             if len(missing) <= 5:
                 for path in missing:
                     print(f"  - {path}")
-        
+
         return manifest
-    
-    def load_and_split(self) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[pd.Series], 
-                                      Optional[pd.Series], Optional[pd.DataFrame], Optional[pd.Series]]:
+
+    def load_and_split(
+        self,
+    ) -> Tuple[
+        pd.DataFrame,
+        pd.DataFrame,
+        Optional[pd.Series],
+        Optional[pd.Series],
+        Optional[pd.DataFrame],
+        Optional[pd.Series],
+    ]:
         """
         Load and split image dataset with automatic MLflow logging.
-        
+
         Returns:
             For supervised: (X_train, X_test, y_train, y_test, X_val, y_val)
                 where X contains image paths as DataFrames
@@ -208,44 +213,48 @@ class ImageDataLoader(BaseDataLoader):
             result = self._split_supervised(self.manifest)
         else:
             result = self._split_unsupervised(self.manifest)
-        
+
         # Automatic MLflow logging
         if self.auto_log_mlflow:
             self._log_splits_to_mlflow(result)
-        
+
         return result
-    
+
     def _split_supervised(self, df: pd.DataFrame) -> Tuple:
         """Split for supervised learning."""
-        X = df[['image_path']]
-        y = df['label']
-        
+        X = df[["image_path"]]
+        y = df["label"]
+
         # Stratify by class
         stratify = y if self._is_classification(y) else None
-        
+
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=self.test_size, random_state=self.random_state, stratify=stratify
         )
-        
+
         # Optional validation split if validation_size > 0
         X_val, y_val = None, None
         if self.validation_size > 0:
             val_size = self.validation_size / (1 - self.test_size)
             stratify_val = y_train if self._is_classification(y_train) else None
             X_train, X_val, y_train, y_val = train_test_split(
-                X_train, y_train, test_size=val_size, random_state=self.random_state, stratify=stratify_val
+                X_train,
+                y_train,
+                test_size=val_size,
+                random_state=self.random_state,
+                stratify=stratify_val,
             )
-        
+
         return X_train, X_test, y_train, y_test, X_val, y_val
-    
+
     def _split_unsupervised(self, df: pd.DataFrame) -> Tuple:
         """Split for unsupervised learning."""
-        X = df[['image_path']]
-        
+        X = df[["image_path"]]
+
         X_train, X_test = train_test_split(
             X, test_size=self.test_size, random_state=self.random_state
         )
-        
+
         # Optional validation split if validation_size > 0
         X_val = None
         if self.validation_size > 0:
@@ -253,156 +262,145 @@ class ImageDataLoader(BaseDataLoader):
             X_train, X_val = train_test_split(
                 X_train, test_size=val_size, random_state=self.random_state
             )
-        
+
         return X_train, X_test, None, None, X_val, None
-    
+
     def _log_splits_to_mlflow(self, splits: Tuple) -> None:
         """
         Log train/test/validation splits to MLflow as separate datasets.
         Also logs sample images and dataset metadata.
-        
+
         Args:
             splits: Tuple of (X_train, X_test, y_train, y_test, X_val, y_val)
         """
         try:
             X_train, X_test, y_train, y_test, X_val, y_val = splits
-            
+
             source_path = str(self.data_path.absolute())
             dataset_name = self.data_path.stem
-            
+
             # Log training dataset
             if self.is_supervised:
                 train_df = X_train.copy()
-                train_df['label'] = y_train.values
+                train_df["label"] = y_train.values
                 train_dataset = mlflow.data.from_pandas(
-                    train_df,
-                    source=source_path,
-                    targets='label',
-                    name=f"{dataset_name}-train"
+                    train_df, source=source_path, targets="label", name=f"{dataset_name}-train"
                 )
             else:
                 train_dataset = mlflow.data.from_pandas(
-                    X_train,
-                    source=source_path,
-                    name=f"{dataset_name}-train"
+                    X_train, source=source_path, name=f"{dataset_name}-train"
                 )
-            
+
             mlflow.log_input(train_dataset, context="training")
-            
+
             # Log test dataset
             if self.is_supervised:
                 test_df = X_test.copy()
-                test_df['label'] = y_test.values
+                test_df["label"] = y_test.values
                 test_dataset = mlflow.data.from_pandas(
-                    test_df,
-                    source=source_path,
-                    targets='label',
-                    name=f"{dataset_name}-test"
+                    test_df, source=source_path, targets="label", name=f"{dataset_name}-test"
                 )
             else:
                 test_dataset = mlflow.data.from_pandas(
-                    X_test,
-                    source=source_path,
-                    name=f"{dataset_name}-test"
+                    X_test, source=source_path, name=f"{dataset_name}-test"
                 )
-            
+
             mlflow.log_input(test_dataset, context="testing")
-            
+
             # Log validation dataset if exists
             if X_val is not None:
                 if self.is_supervised:
                     val_df = X_val.copy()
-                    val_df['label'] = y_val.values
+                    val_df["label"] = y_val.values
                     val_dataset = mlflow.data.from_pandas(
                         val_df,
                         source=source_path,
-                        targets='label',
-                        name=f"{dataset_name}-validation"
+                        targets="label",
+                        name=f"{dataset_name}-validation",
                     )
                 else:
                     val_dataset = mlflow.data.from_pandas(
-                        X_val,
-                        source=source_path,
-                        name=f"{dataset_name}-validation"
+                        X_val, source=source_path, name=f"{dataset_name}-validation"
                     )
-                
+
                 mlflow.log_input(val_dataset, context="validation")
-                print(f"✓ Logged train, validation, and test datasets to MLflow")
+                print("✓ Logged train, validation, and test datasets to MLflow")
             else:
-                print(f"✓ Logged train and test datasets to MLflow")
-            
+                print("✓ Logged train and test datasets to MLflow")
+
             # Log dataset metadata
             info = self.get_data_info()
             for key, value in info.items():
                 mlflow.set_tag(key, str(value))
-            
+
             # Log sample images from training set
             self._log_sample_images(X_train, y_train if self.is_supervised else None)
-                
+
         except Exception as e:
             print(f"⚠️  MLflow logging failed: {e}")
             print("   Continuing without MLflow logging...")
-    
-    def _log_sample_images(self, X_sample: pd.DataFrame, y_sample: Optional[pd.Series] = None, 
-                          num_samples: int = 5) -> None:
+
+    def _log_sample_images(
+        self, X_sample: pd.DataFrame, y_sample: Optional[pd.Series] = None, num_samples: int = 5
+    ) -> None:
         """Log sample images to MLflow."""
         try:
             sample_df = X_sample.head(num_samples)
-            
+
             for idx, (_, row) in enumerate(sample_df.iterrows()):
                 try:
-                    img = Image.open(row['image_path']).convert('RGB')
-                    
+                    img = Image.open(row["image_path"]).convert("RGB")
+
                     if self.is_supervised and y_sample is not None:
                         label = y_sample.iloc[idx]
                         mlflow.log_image(img, f"sample_images/{label}_image_{idx}.png")
                     else:
                         mlflow.log_image(img, f"sample_images/image_{idx}.png")
-                        
+
                 except Exception as e:
                     print(f"⚠️  Could not log sample image {idx}: {e}")
-                    
+
         except Exception as e:
             print(f"⚠️  Could not log sample images: {e}")
-    
+
     def load_images(self, image_paths: pd.DataFrame, as_array: bool = True) -> np.ndarray:
         """
         Load images from DataFrame of paths.
-        
+
         Args:
             image_paths: DataFrame with 'image_path' column
             as_array: If True, return numpy array. If False, return list of PIL Images.
-        
+
         Returns:
             Numpy array of shape (N, H, W, C) or list of PIL Images
         """
         images = []
-        
-        for path in image_paths['image_path']:
+
+        for path in image_paths["image_path"]:
             try:
-                img = Image.open(path).convert('RGB')
+                img = Image.open(path).convert("RGB")
                 img = img.resize(self.image_size)
-                
+
                 if self.transform:
                     img = self.transform(img)
-                
+
                 if as_array:
                     img = np.array(img)
-                
+
                 images.append(img)
-                
+
             except Exception as e:
                 print(f"⚠️  Failed to load {path}: {e}")
                 # Use black image as placeholder
                 if as_array:
                     images.append(np.zeros((*self.image_size, 3), dtype=np.uint8))
                 else:
-                    images.append(Image.new('RGB', self.image_size))
-        
+                    images.append(Image.new("RGB", self.image_size))
+
         if as_array:
             return np.stack(images)
         return images
-    
+
     def get_data_info(self) -> dict:
         """Get dataset metadata."""
         info = {
@@ -416,26 +414,26 @@ class ImageDataLoader(BaseDataLoader):
             "data.validation_size": self.validation_size,
             "data.random_state": self.random_state,
         }
-        
+
         if self.is_supervised:
             info["data.target"] = "label"
             info["data.target_type"] = "classification"
-            info["data.num_classes"] = self.manifest['label'].nunique()
-            
+            info["data.num_classes"] = self.manifest["label"].nunique()
+
             # Class distribution
-            class_dist = self.manifest['label'].value_counts().to_dict()
+            class_dist = self.manifest["label"].value_counts().to_dict()
             info["data.class_distribution"] = str(class_dist)
-        
+
         return info
-    
+
     def summary(self) -> str:
         """Generate human-readable summary."""
         info = self.get_data_info()
-        
+
         lines = [
-            "="*60,
+            "=" * 60,
             "IMAGE DATASET SUMMARY",
-            "="*60,
+            "=" * 60,
             f"Source: {self.data_path}",
             f"Structure: {self.structure_type}",
             f"Images: {info['data.num_images']:,}",
@@ -443,18 +441,20 @@ class ImageDataLoader(BaseDataLoader):
             "",
             f"Task: {info['data.task_type'].upper()}",
         ]
-        
+
         if self.is_supervised:
-            lines.extend([
-                f"Classes: {info['data.num_classes']}",
-                "",
-                "Class Distribution:",
-            ])
-            
-            class_dist = self.manifest['label'].value_counts()
+            lines.extend(
+                [
+                    f"Classes: {info['data.num_classes']}",
+                    "",
+                    "Class Distribution:",
+                ]
+            )
+
+            class_dist = self.manifest["label"].value_counts()
             for class_name, count in class_dist.items():
                 pct = (count / len(self.manifest)) * 100
                 lines.append(f"  {class_name}: {count} ({pct:.1f}%)")
-        
-        lines.append("="*60)
+
+        lines.append("=" * 60)
         return "\n".join(lines)

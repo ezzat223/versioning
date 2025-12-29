@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import git
-import pandas as pd
 
 
 def get_git_metadata(repo_path: Optional[str] = None) -> Dict[str, str]:
@@ -101,9 +100,13 @@ def print_git_info(metadata: Dict[str, str]) -> None:
         print(f"{key:30s}: {value}")
     print("=" * 60 + "\n")
 
-def resolve_model_uri(model_name: str, model_version: str, experiment_name: str, tracking_uri: str) -> str:
+
+def resolve_model_uri(
+    model_name: str, model_version: str, experiment_name: str, tracking_uri: str
+) -> str:
     import mlflow
     from mlflow.tracking import MlflowClient
+
     mlflow.set_tracking_uri(tracking_uri)
     client = MlflowClient()
     if model_version and model_version.lower() in ("champion", "latest", "staging", "production"):

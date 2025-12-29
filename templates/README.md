@@ -4,7 +4,7 @@
 
 These are **starter templates** for data scientists. Pick the template for your task, customize it for your model, and start training!
 
-**YOU ARE A DATA SCIENTIST, NOT AN MLOPS ENGINEER.**  
+**YOU ARE A DATA SCIENTIST, NOT AN MLOPS ENGINEER.**
 Your job: Implement the model. The infrastructure is already set up.
 
 ---
@@ -250,7 +250,7 @@ class MyModel(nn.Module):
         super().__init__()
         self.fc1 = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, 1)
-    
+
     def forward(self, x):
         x = torch.relu(self.fc1(x))
         return self.fc2(x)
@@ -351,12 +351,12 @@ def train_model(X_train, y_train, args):
 
 You've successfully used the template when:
 
-✅ You chose and kept ONE data loader  
-✅ You implemented YOUR model  
-✅ You added YOUR hyperparameters (in 3 places)  
-✅ You customized YOUR evaluation metrics  
-✅ You deleted the TODO comments  
-✅ Training runs via `mlflow run .`  
-✅ Results appear in MLflow UI  
+✅ You chose and kept ONE data loader
+✅ You implemented YOUR model
+✅ You added YOUR hyperparameters (in 3 places)
+✅ You customized YOUR evaluation metrics
+✅ You deleted the TODO comments
+✅ Training runs via `mlflow run .`
+✅ Results appear in MLflow UI
 
 **Now you're doing ML, not infrastructure work! 🚀**
