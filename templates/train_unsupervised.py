@@ -17,10 +17,14 @@ This template provides:
 
 import argparse
 import json
+import sys
 import warnings
+from pathlib import Path
 
 import mlflow
 
+# Ensure project root is on PYTHONPATH when running as a script (e.g., dvc repro)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.utils import get_git_metadata, validate_git_state
 
 warnings.filterwarnings("ignore")

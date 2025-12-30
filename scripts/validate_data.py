@@ -306,7 +306,8 @@ To customize:
 
 Great Expectations Documentation:
 - Gallery of expectations: https://greatexpectations.io/expectations
-- Expectation types: https://docs.greatexpectations.io/docs/reference/expectations/standard_arguments/
+- Expectation types:
+  https://docs.greatexpectations.io/docs/reference/expectations/standard_arguments/
 
 Common expectations:
 - expect_column_values_to_be_between

@@ -18,8 +18,10 @@ This template provides:
 
 import argparse
 import pickle
+import sys
 import warnings
 from pathlib import Path
+from pathlib import Path as _PathAlias
 
 import mlflow
 import mlflow.sklearn
@@ -32,6 +34,8 @@ from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, cross_val_
 from skopt import BayesSearchCV
 from skopt.space import Integer
 
+# Ensure project root is on PYTHONPATH when running as a script (e.g., dvc repro)
+sys.path.insert(0, str(_PathAlias(__file__).resolve().parents[1]))
 from src.utils import get_git_metadata, validate_git_state
 
 warnings.filterwarnings("ignore")

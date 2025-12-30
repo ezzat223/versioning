@@ -1,3 +1,3 @@
-"""Iris Classifier MLOps Project"""
+"""MLOps Template Project"""
 
 __version__ = "0.1.0"
