@@ -215,26 +215,26 @@ def validate_data(data_path: str, suite_name: str = "default") -> bool:
         print("FAILED EXPECTATIONS:")
         print("-" * 70)
 
-        for result in results.run_results.values():
-            for check in result["validation_result"]["results"]:
-                if not check["success"]:
-                    exp_type = check["expectation_config"]["expectation_type"]
-                    kwargs = check["expectation_config"]["kwargs"]
+        for check in results.results:
+            if not check.success:
+                exp_type = check.expectation_config.type
+                kwargs = check.expectation_config.kwargs
 
-                    print(f"\n❌ {exp_type}")
+                print(f"\n❌ {exp_type}")
 
-                    # Show relevant kwargs
-                    if "column" in kwargs:
-                        print(f"   Column: {kwargs['column']}")
+                if "column" in kwargs:
+                    print(f"   Column: {kwargs['column']}")
 
-                    # Show failure details
-                    if "result" in check:
-                        if "observed_value" in check["result"]:
-                            print(f"   Observed: {check['result']['observed_value']}")
-                        if "unexpected_count" in check["result"]:
-                            print(f"   Unexpected Count: {check['result']['unexpected_count']}")
-                        if "unexpected_percent" in check["result"]:
-                            print(f"   Unexpected %: {check['result']['unexpected_percent']:.2f}%")
+                result_details = check.result or {}
+
+                if "observed_value" in result_details:
+                    print(f"   Observed: {result_details['observed_value']}")
+
+                if "unexpected_count" in result_details:
+                    print(f"   Unexpected Count: {result_details['unexpected_count']}")
+
+                if "unexpected_percent" in result_details:
+                    print(f"   Unexpected %: {result_details['unexpected_percent']:.2f}%")
 
     print("\n" + "=" * 70 + "\n")
 

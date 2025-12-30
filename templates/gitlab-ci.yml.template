@@ -40,7 +40,8 @@ code_quality:
   script:
     # Formatting
     - echo "🎨 Checking code formatting..."
-    - black --check src/ scripts/ || (echo "Run: black src/ scripts/" && exit 1)
+    - |
+      black --check src/ scripts/ || (echo "Run: black src/ scripts/" && exit 1)
 
     # Linting
     - echo "🔍 Linting..."
