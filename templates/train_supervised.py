@@ -342,6 +342,9 @@ def main():
         print("\n" + "-" * 60)
         metrics = evaluate_model(model, X_test, y_test, X_val, y_val)
 
+        # Log evaluation metrics to MLflow
+        mlflow.log_metrics(metrics)
+
         # Save metrics locally for DVC
         print("\n" + "-" * 60)
         print("Saving artifacts...")
