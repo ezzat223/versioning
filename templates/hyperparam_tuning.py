@@ -26,6 +26,9 @@ from pathlib import Path as _PathAlias
 import mlflow
 import mlflow.sklearn
 import numpy as np
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
 from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
 from mlflow.models import infer_signature
 from scipy.stats import randint
@@ -33,6 +36,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, cross_val_score
 from skopt import BayesSearchCV
 from skopt.space import Integer
+
+load_dotenv()
 
 # Ensure project root is on PYTHONPATH when running as a script (e.g., dvc repro)
 sys.path.insert(0, str(_PathAlias(__file__).resolve().parents[1]))

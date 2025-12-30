@@ -8,6 +8,11 @@ import json
 import sys
 from typing import Dict, Optional, Tuple
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import mlflow
 from mlflow.entities import Run
 from mlflow.tracking import MlflowClient

@@ -21,6 +21,11 @@ import sys
 import warnings
 from pathlib import Path
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import mlflow
 
 # Ensure project root is on PYTHONPATH when running as a script (e.g., dvc repro)

@@ -105,7 +105,6 @@ def create_directory_structure(root_path: Path) -> None:
     # Create __init__.py files
     init_files = [
         "src/__init__.py",
-        "src/data_loaders/__init__.py",
         "src/deployment/__init__.py",
     ]
 
@@ -239,6 +238,7 @@ def scaffold_project(args):
         ("pyproject.toml", "pyproject.toml"),
         (".gitignore", ".gitignore"),
         (".pre-commit-config.yaml", ".pre-commit-config.yaml"),
+        (".env.example", ".env.example"),
         ("src/utils.py", "src/utils.py"),
     ]
 
@@ -278,26 +278,12 @@ def scaffold_project(args):
     # -------------------------------------------------------------------------
     # DATA LOADERS
     # -------------------------------------------------------------------------
-    logger.info(f"\n→ Setting up data loaders for {args.data_type}...")
-
-    # Always copy base loader
-    base_loader = current_dir / "src/data_loaders/base_loader.py"
-    if not copy_file_safe(base_loader, target_dir / "src/data_loaders/base_loader.py"):
-        failed_operations.append("Copy base_loader.py")
-
-    # Copy specific loader
-    loader_map = {
-        "tabular": "tabular_loader.py",
-        "image": "image_loader.py",
-        "database": "database_loader.py",
-    }
-
-    loader_file = loader_map.get(args.data_type)
-    if loader_file:
-        src = current_dir / "src/data_loaders" / loader_file
-        dst = target_dir / "src/data_loaders" / loader_file
-        if not copy_file_safe(src, dst):
-            failed_operations.append(f"Copy {loader_file}")
+    logger.info("\n→ Setting up data loaders (including all available)...")
+    src_dl_dir = current_dir / "src/data_loaders"
+    dst_dl_dir = target_dir / "src/data_loaders"
+    for file in src_dl_dir.glob("*.py"):
+        if not copy_file_safe(file, dst_dl_dir / file.name):
+            failed_operations.append(f"Copy {file.name}")
 
     # -------------------------------------------------------------------------
     # TRAINING SCRIPT

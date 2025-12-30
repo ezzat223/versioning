@@ -6,6 +6,11 @@ Used for manual recovery in case of issues.
 import argparse
 from datetime import datetime
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import mlflow
 from mlflow.tracking import MlflowClient
 

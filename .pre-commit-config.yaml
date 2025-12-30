@@ -48,6 +48,6 @@ repos:
   rev: 7.3.0
   hooks:
   - id: flake8
-    args: [ '--max-line-length=100', '--ignore=E203,W503,E501' ]
+    args: [ '--max-line-length=100', '--ignore=E203,W503,E501,E402' ]
     # args: ['--max-line-length=100', '--ignore=E203,W503,E501,F541,E722,F401']
     exclude: ^(data/|models/|reports/|notebooks/|mlruns/|templates/)

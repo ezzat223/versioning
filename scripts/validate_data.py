@@ -71,49 +71,43 @@ def create_expectation_suite(context, suite_name: str = "default"):
 
     # Example: Expect specific columns to exist
     # suite.add_expectation(
-    #     gx.core.ExpectationConfiguration(
-    #         expectation_type="expect_column_to_exist",
-    #         kwargs={"column": "age"}
+    #     gx.expectations.ExpectColumnToExist(
+    #         column="age"
     #     )
     # )
 
     # Example: Age should be between 0 and 120
     # suite.add_expectation(
-    #     gx.core.ExpectationConfiguration(
-    #         expectation_type="expect_column_values_to_be_between",
-    #         kwargs={"column": "age", "min_value": 0, "max_value": 120}
+    #     gx.expectations.ExpectColumnValuesToBeBetween(
+    #         column="age", min_value=0, max_value=120
     #     )
     # )
 
     # Example: Email should match regex pattern
     # suite.add_expectation(
-    #     gx.core.ExpectationConfiguration(
-    #         expectation_type="expect_column_values_to_match_regex",
-    #         kwargs={"column": "email", "regex": r"^[\w\.-]+@[\w\.-]+\.\w+$"}
+    #     gx.expectations.ExpectColumnValuesToMatchRegex(
+    #         column="email", regex=r"^[\w\.-]+@[\w\.-]+\.\w+$"
     #     )
     # )
 
     # Example: Category should be in a specific set
     # suite.add_expectation(
-    #     gx.core.ExpectationConfiguration(
-    #         expectation_type="expect_column_values_to_be_in_set",
-    #         kwargs={"column": "category", "value_set": ["A", "B", "C"]}
+    #     gx.expectations.ExpectColumnValuesToBeInSet(
+    #         column="category", value_set=["A", "B", "C"]
     #     )
     # )
 
     # Example: No null values in target column
     # suite.add_expectation(
-    #     gx.core.ExpectationConfiguration(
-    #         expectation_type="expect_column_values_to_not_be_null",
-    #         kwargs={"column": "target"}
+    #     gx.expectations.ExpectColumnValuesToNotBeNull(
+    #         column="target"
     #     )
     # )
 
     # Example: Price should have reasonable statistics
     # suite.add_expectation(
-    #     gx.core.ExpectationConfiguration(
-    #         expectation_type="expect_column_mean_to_be_between",
-    #         kwargs={"column": "price", "min_value": 10, "max_value": 1000}
+    #     gx.expectations.ExpectColumnMeanToBeBetween(
+    #         column="price", min_value=10, max_value=1000
     #     )
     # )
 
@@ -162,11 +156,6 @@ def validate_data(data_path: str, suite_name: str = "default") -> bool:
     suite = create_expectation_suite(context, suite_name)
     print(f"✓ Suite has {len(suite.expectations)} expectations\n")
 
-    # Add datasource (pandas)
-    print("→ Loading data...")
-    # Use modern API for Data Sources
-    datasource = context.data_sources.add_pandas(name="pandas_datasource")
-
     # Read data based on file type
     if data_path.suffix == ".csv":
         df = pd.read_csv(data_path)
@@ -177,19 +166,31 @@ def validate_data(data_path: str, suite_name: str = "default") -> bool:
         return False
 
     print(f"✓ Loaded {len(df)} rows, {len(df.columns)} columns\n")
-
+    # Add pandas datasource
+    try:
+        datasource = context.data_sources.add_pandas(name="pandas_datasource")
+    except Exception:
+        # Datasource already exists, get it
+        datasource = context.data_sources.get("pandas_datasource")
     # Create data asset
-    data_asset = datasource.add_dataframe_asset(name="data_asset")
+    try:
+        data_asset = datasource.add_dataframe_asset(name="data_asset")
+    except Exception:
+        # Asset already exists, get it
+        data_asset = datasource.get_asset("data_asset")
 
-    # Create batch request
-    # Build batch request for runtime dataframe
-    batch_request = data_asset.build_batch_request(options={"dataframe": df})
+    # Create batch definition
+    try:
+        batch_definition = data_asset.add_batch_definition_whole_dataframe("batch_definition")
+    except Exception:
+        # Batch definition already exists, get it
+        batch_definition = data_asset.get_batch_definition("batch_definition")
 
-    # Create batch
-    batch = data_asset.get_batch(batch_request)
-
-    # Run validation
-    results = batch.run()
+    # Get batch with actual dataframe
+    batch = batch_definition.get_batch(batch_parameters={"dataframe": df})
+    # Run validation using batch.validate() with the suite
+    print("→ Running validation...\n")
+    results = batch.validate(suite)
 
     # Display results
     print("\n" + "=" * 70)

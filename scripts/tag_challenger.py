@@ -5,6 +5,11 @@ Used in CI/CD pipeline after training.
 
 import argparse
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import mlflow
 from mlflow.tracking import MlflowClient
 
