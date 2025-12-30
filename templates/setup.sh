@@ -204,13 +204,13 @@ dvc config core.autostage true
 print_success "DVC autostage enabled"
 
 # Configure remotes
-mkdir -p dvc_storage
+mkdir -p .dvc_storage
 
 # Add local remote (default for development)
 if dvc remote list | grep -q "local-store"; then
     print_info "DVC remote 'local-store' already exists"
 else
-    dvc remote add -d local-store dvc_storage
+    dvc remote add -d local-store .dvc_storage
     print_success "DVC local remote configured (default)"
 fi
 

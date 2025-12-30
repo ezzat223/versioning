@@ -25,7 +25,7 @@ import pandas as pd
 # =============================================================================
 
 
-def create_expectation_suite(context: gx.DataContext, suite_name: str = "default"):
+def create_expectation_suite(context, suite_name: str = "default"):
     """
     Define your data expectations here.
 
@@ -40,16 +40,16 @@ def create_expectation_suite(context: gx.DataContext, suite_name: str = "default
     - expect_table_row_count_to_be_between
     """
 
-    # Get or create suite
+    # Get or create suite (v3 API)
     try:
-        suite = context.get_expectation_suite(suite_name)
+        suite = context.suites.get(name=suite_name)
         print(f"✓ Using existing suite: {suite_name}")
+        # Clear existing expectations (so we can redefine them)
+        suite.expectations = []
     except Exception:
-        suite = context.add_expectation_suite(suite_name)
+        suite = gx.ExpectationSuite(name=suite_name)
+        suite = context.suites.add(suite)
         print(f"✓ Created new suite: {suite_name}")
-
-    # Clear existing expectations (so we can redefine them)
-    suite.expectations = []
 
     # =========================================================================
     # BASIC EXPECTATIONS (Always applicable)
@@ -57,18 +57,12 @@ def create_expectation_suite(context: gx.DataContext, suite_name: str = "default
 
     # Expectation 1: Dataset should not be empty
     suite.add_expectation(
-        gx.core.ExpectationConfiguration(
-            expectation_type="expect_table_row_count_to_be_between",
-            kwargs={"min_value": 1, "max_value": None},
-        )
+        gx.expectations.ExpectTableRowCountToBeBetween(min_value=1, max_value=None)
     )
 
     # Expectation 2: No completely null columns
     suite.add_expectation(
-        gx.core.ExpectationConfiguration(
-            expectation_type="expect_table_column_count_to_be_between",
-            kwargs={"min_value": 1, "max_value": None},
-        )
+        gx.expectations.ExpectTableColumnCountToBeBetween(min_value=1, max_value=None)
     )
 
     # =========================================================================
@@ -127,9 +121,6 @@ def create_expectation_suite(context: gx.DataContext, suite_name: str = "default
     # TODO: Add your project-specific expectations above!
     # =========================================================================
 
-    # Save suite
-    context.save_expectation_suite(suite)
-
     return suite
 
 
@@ -163,7 +154,8 @@ def validate_data(data_path: str, suite_name: str = "default") -> bool:
     print("=" * 70 + "\n")
 
     # Initialize GX context (in-memory, no project files)
-    context = gx.get_context(mode="ephemeral")
+    # Ephemeral context (in-memory, no project files)
+    context = gx.get_context()
 
     # Create/update expectation suite
     print("→ Setting up expectation suite...")
@@ -172,7 +164,8 @@ def validate_data(data_path: str, suite_name: str = "default") -> bool:
 
     # Add datasource (pandas)
     print("→ Loading data...")
-    datasource = context.sources.add_pandas(name="pandas_datasource")
+    # Use modern API for Data Sources
+    datasource = context.data_sources.add_pandas(name="pandas_datasource")
 
     # Read data based on file type
     if data_path.suffix == ".csv":
@@ -189,22 +182,14 @@ def validate_data(data_path: str, suite_name: str = "default") -> bool:
     data_asset = datasource.add_dataframe_asset(name="data_asset")
 
     # Create batch request
-    batch_request = data_asset.build_batch_request(dataframe=df)
+    # Build batch request for runtime dataframe
+    batch_request = data_asset.build_batch_request(options={"dataframe": df})
 
-    # Create checkpoint
-    print("→ Running validation...")
-    checkpoint = context.add_or_update_checkpoint(
-        name="validation_checkpoint",
-        validations=[
-            {
-                "batch_request": batch_request,
-                "expectation_suite_name": suite_name,
-            }
-        ],
-    )
+    # Create batch
+    batch = data_asset.get_batch(batch_request)
 
     # Run validation
-    results = checkpoint.run()
+    results = batch.run()
 
     # Display results
     print("\n" + "=" * 70)
