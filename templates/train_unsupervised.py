@@ -26,6 +26,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import os
+
 import mlflow
 
 # Ensure project root is on PYTHONPATH when running as a script (e.g., dvc repro)
@@ -34,7 +36,7 @@ from src.utils import get_git_metadata, validate_git_state
 
 warnings.filterwarnings("ignore")
 
-mlflow.set_tracking_uri("http://127.0.0.1:5001")
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001"))
 
 # =============================================================================
 # MLFLOW AUTOLOGGING

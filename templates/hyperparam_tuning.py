@@ -17,6 +17,7 @@ This template provides:
 """
 
 import argparse
+import os
 import pickle
 import sys
 import warnings
@@ -45,7 +46,7 @@ from src.utils import get_git_metadata, validate_git_state
 
 warnings.filterwarnings("ignore")
 
-mlflow.set_tracking_uri("http://localhost:5001")
+mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5001"))
 
 # Enable autologging
 mlflow.autolog(
