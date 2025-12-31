@@ -358,4 +358,10 @@ Common expectations:
 - expect_column_mean_to_be_between
 - expect_table_row_count_to_be_between
 - expect_column_unique_value_count_to_be_between
+
+- python scripts/validate_data.py \
+    --data ${DATA_PATH} \
+    --suite iris_suite \
+    --columns "sepal length (cm),sepal width (cm),petal length (cm),petal width (cm),species" \
+    --column-types "sepal length (cm):float64,sepal width (cm):float64,petal length (cm):float64,petal width (cm):float64,species:int64"
 """

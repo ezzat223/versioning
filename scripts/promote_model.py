@@ -5,6 +5,7 @@ Uses MLflow Model Registry aliases for deployment.
 
 import argparse
 import json
+import os
 from datetime import datetime
 
 # Load environment variables from .env file
@@ -23,7 +24,7 @@ class ModelPromoter:
         self,
         experiment_name: str,
         model_name: str = None,
-        tracking_uri: str = "http://127.0.0.1:5001",
+        tracking_uri: str = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001"),
     ):
         """
         Initialize model promoter.
@@ -171,7 +172,10 @@ def main():
         "--model-name", type=str, help="Registered model name (defaults to experiment name)"
     )
     parser.add_argument(
-        "--tracking-uri", type=str, default="http://127.0.0.1:5001", help="MLflow tracking URI"
+        "--tracking-uri",
+        type=str,
+        default=os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001"),
+        help="MLflow tracking URI",
     )
     parser.add_argument(
         "--output",

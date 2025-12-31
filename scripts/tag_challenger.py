@@ -4,6 +4,7 @@ Used in CI/CD pipeline after training.
 """
 
 import argparse
+import os
 
 # Load environment variables from .env file
 from dotenv import load_dotenv
@@ -14,7 +15,10 @@ import mlflow
 from mlflow.tracking import MlflowClient
 
 
-def tag_latest_run_as_challenger(experiment_name: str, tracking_uri: str = "http://127.0.0.1:5001"):
+def tag_latest_run_as_challenger(
+    experiment_name: str,
+    tracking_uri: str = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001"),
+):
     """Tag the most recent run as challenger."""
 
     mlflow.set_tracking_uri(tracking_uri)
@@ -48,7 +52,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tag latest run as challenger")
     parser.add_argument("--experiment-name", type=str, required=True, help="MLflow experiment name")
     parser.add_argument(
-        "--tracking-uri", type=str, default="http://127.0.0.1:5001", help="MLflow tracking URI"
+        "--tracking-uri",
+        type=str,
+        default=os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001"),
+        help="MLflow tracking URI",
     )
 
     args = parser.parse_args()

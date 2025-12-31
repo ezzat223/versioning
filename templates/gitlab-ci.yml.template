@@ -11,6 +11,8 @@ variables:
   DVC_REMOTE_NAME: "aws-store"
   DVC_S3_BUCKET: ""
   AWS_ENDPOINT_URL: ""
+  CONDA_PKGS_DIRS: ".conda/pkgs"
+  CONDA_ENVS_DIRS: ".conda/envs"
 
   # Project-specific (customize these)
   DATA_PATH: "data/processed/dataset.csv"
@@ -36,6 +38,8 @@ cache:
   paths:
     - .cache/pip
     - .venv/
+    - .conda/pkgs
+    - .conda/envs
 
 # =============================================================================
 # STAGE 1: CODE QUALITY (Keep it simple!)
@@ -72,17 +76,25 @@ code_quality:
 
 data_validation:
   stage: validate
-  image: python:${PYTHON_VERSION}-slim
+  image: continuumio/miniconda3:latest
   before_script:
-    - pip install --upgrade pip
-    - pip install dvc dvc-s3 great-expectations
+    - apt-get update && apt-get install -y build-essential gcc
+    - conda config --add channels conda-forge
+    - conda install -n base -c conda-forge mamba -y
+    - export CONDA_PKGS_DIRS="${CONDA_PKGS_DIRS}"
+    - export CONDA_ENVS_DIRS="${CONDA_ENVS_DIRS}"
+    - mamba env create -f environment.yml || mamba env update -f environment.yml --prune
+    # Activate environment
+    - source /opt/conda/etc/profile.d/conda.sh
+    - conda activate {{ project_name }}
+    # DVC remote setup
     - |
       if [ -n "$DVC_S3_BUCKET" ]; then
         dvc remote add -f ${DVC_REMOTE_NAME} s3://$DVC_S3_BUCKET
-        if [ -n "$AWS_ACCESS_KEY_ID" ]; then dvc remote modify ${DVC_REMOTE_NAME} access_key_id $AWS_ACCESS_KEY_ID; fi
-        if [ -n "$AWS_SECRET_ACCESS_KEY" ]; then dvc remote modify ${DVC_REMOTE_NAME} secret_access_key $AWS_SECRET_ACCESS_KEY; fi
-        if [ -n "$AWS_DEFAULT_REGION" ]; then dvc remote modify ${DVC_REMOTE_NAME} region $AWS_DEFAULT_REGION; fi
-        if [ -n "$AWS_ENDPOINT_URL" ]; then dvc remote modify ${DVC_REMOTE_NAME} endpointurl $AWS_ENDPOINT_URL; fi
+        [ -n "$AWS_ACCESS_KEY_ID" ] && dvc remote modify ${DVC_REMOTE_NAME} access_key_id $AWS_ACCESS_KEY_ID
+        [ -n "$AWS_SECRET_ACCESS_KEY" ] && dvc remote modify ${DVC_REMOTE_NAME} secret_access_key $AWS_SECRET_ACCESS_KEY
+        [ -n "$AWS_DEFAULT_REGION" ] && dvc remote modify ${DVC_REMOTE_NAME} region $AWS_DEFAULT_REGION
+        [ -n "$AWS_ENDPOINT_URL" ] && dvc remote modify ${DVC_REMOTE_NAME} endpointurl $AWS_ENDPOINT_URL
         dvc remote default ${DVC_REMOTE_NAME}
       fi
   script:
@@ -90,7 +102,11 @@ data_validation:
     - dvc pull -r ${DVC_REMOTE_NAME} || dvc pull || echo "⚠️ DVC pull failed (ensure cloud remote configured and seeded)"
 
     # Single validation script with Great Expectations
-    - python scripts/validate_data.py --data ${DATA_PATH}
+    - python scripts/validate_data.py \
+      --data ${DATA_PATH} \
+      --suite iris_suite \
+      --columns "sepal length (cm),sepal width (cm),petal length (cm),petal width (cm),species" \
+      --column-types "sepal length (cm):float64,sepal width (cm):float64,petal length (cm):float64,petal width (cm):float64,species:int64"
 
     - echo "✅ Validation complete"
   rules:
@@ -104,11 +120,16 @@ data_validation:
 train_challenger:
   stage: train
   image: continuumio/miniconda3:latest
-  services:
-    - name: mlflow/mlflow:latest
-      alias: mlflow
   before_script:
-    - conda env create -f environment.yml || conda env update -f environment.yml
+    - apt-get update && apt-get install -y build-essential gcc
+    - conda config --add channels conda-forge
+    - conda install -n base -c conda-forge mamba -y
+    - export CONDA_PKGS_DIRS="${CONDA_PKGS_DIRS}"
+    - export CONDA_ENVS_DIRS="${CONDA_ENVS_DIRS}"
+    - mamba env create -f environment.yml || mamba env update -f environment.yml --prune
+    # Activate environment
+    - source /opt/conda/etc/profile.d/conda.sh
+    - conda activate {{ project_name }}
     - |
       if [ -n "$DVC_S3_BUCKET" ]; then
         conda run -n {{ project_name }} dvc remote add -f ${DVC_REMOTE_NAME} s3://$DVC_S3_BUCKET
@@ -132,7 +153,6 @@ train_challenger:
   artifacts:
     paths:
       - metrics.json
-      - mlruns/
     expire_in: 30 days
   rules:
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'

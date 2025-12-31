@@ -343,3 +343,5 @@ ENV/
 docs/
 docker-compose.yaml
 .dvc_storage/
+
+generated/

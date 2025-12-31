@@ -5,6 +5,7 @@ Fixed version with better error handling and clearer logic.
 
 import argparse
 import json
+import os
 import sys
 from typing import Dict, Optional, Tuple
 
@@ -72,7 +73,7 @@ class ModelComparator:
     def __init__(
         self,
         experiment_name: str,
-        tracking_uri: str = "http://127.0.0.1:5001",
+        tracking_uri: str = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001"),
         improvement_threshold: float = 0.01,
     ):
         self.experiment_name = experiment_name
@@ -251,7 +252,11 @@ class ModelComparator:
 def main():
     parser = argparse.ArgumentParser(description="Compare challenger vs champion")
     parser.add_argument("--experiment-name", required=True, help="MLflow experiment name")
-    parser.add_argument("--tracking-uri", default="http://127.0.0.1:5001", help="MLflow URI")
+    parser.add_argument(
+        "--tracking-uri",
+        default=os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001"),
+        help="MLflow URI",
+    )
     parser.add_argument(
         "--improvement-threshold",
         type=float,
