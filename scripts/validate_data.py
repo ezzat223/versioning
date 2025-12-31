@@ -25,7 +25,12 @@ import pandas as pd
 # =============================================================================
 
 
-def create_expectation_suite(context, suite_name: str = "default"):
+def create_expectation_suite(
+    context,
+    suite_name: str = "default",
+    columns: list[str] | None = None,
+    column_types: dict[str, str] | None = None,
+):
     """
     Define your data expectations here.
 
@@ -68,6 +73,17 @@ def create_expectation_suite(context, suite_name: str = "default"):
     # =========================================================================
     # CUSTOM EXPECTATIONS - ADD YOUR OWN BELOW!
     # =========================================================================
+
+    # Optional: Validate table schema (columns)
+    if columns:
+        suite.add_expectation(gx.expectations.ExpectTableColumnsToMatchSet(column_set=columns))
+
+    # Optional: Validate column data types
+    if column_types:
+        for col, typ in column_types.items():
+            suite.add_expectation(
+                gx.expectations.ExpectColumnValuesToBeOfType(column=col, type_=typ)
+            )
 
     # Example: Expect specific columns to exist
     # suite.add_expectation(
@@ -123,7 +139,12 @@ def create_expectation_suite(context, suite_name: str = "default"):
 # =============================================================================
 
 
-def validate_data(data_path: str, suite_name: str = "default") -> bool:
+def validate_data(
+    data_path: str,
+    suite_name: str = "default",
+    columns: list[str] | None = None,
+    column_types: dict[str, str] | None = None,
+) -> bool:
     """
     Run Great Expectations validation on a dataset.
 
@@ -153,7 +174,9 @@ def validate_data(data_path: str, suite_name: str = "default") -> bool:
 
     # Create/update expectation suite
     print("→ Setting up expectation suite...")
-    suite = create_expectation_suite(context, suite_name)
+    suite = create_expectation_suite(
+        context, suite_name, columns=columns, column_types=column_types
+    )
     print(f"✓ Suite has {len(suite.expectations)} expectations\n")
 
     # Read data based on file type
@@ -269,11 +292,28 @@ After first run, customize the expectations in create_expectation_suite()!
     parser.add_argument(
         "--suite", default="default", help="Expectation suite name (default: default)"
     )
+    parser.add_argument(
+        "--columns",
+        help="Comma-separated list of expected columns for schema validation",
+    )
+    parser.add_argument(
+        "--column-types",
+        help="Comma-separated col:type pairs for dtype validation (e.g., id:int64,name:object)",
+    )
 
     args = parser.parse_args()
 
     try:
-        success = validate_data(args.data, args.suite)
+        cols = [c.strip() for c in args.columns.split(",")] if args.columns else None
+        types = None
+        if args.column_types:
+            types = {}
+            for pair in args.column_types.split(","):
+                if ":" in pair:
+                    c, t = pair.split(":", 1)
+                    types[c.strip()] = t.strip()
+
+        success = validate_data(args.data, args.suite, columns=cols, column_types=types)
         sys.exit(0 if success else 1)
 
     except Exception as e:

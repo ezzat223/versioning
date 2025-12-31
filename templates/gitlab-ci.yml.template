@@ -8,11 +8,20 @@ variables:
   DOCKER_IMAGE_NAME: "{{ project_name }}-service"
   MODEL_NAME: "{{ project_name }}-model"
   EXPERIMENT_NAME: "{{ project_name }}-exp"
+  DVC_REMOTE_NAME: "aws-store"
+  DVC_S3_BUCKET: ""
+  AWS_ENDPOINT_URL: ""
 
   # Project-specific (customize these)
   DATA_PATH: "data/processed/dataset.csv"
   TARGET_COLUMN: "target"
+  {% if task_type == 'supervised' %}
   PRIMARY_METRIC: "test_accuracy"
+  {% elif task_type == 'unsupervised' %}
+  PRIMARY_METRIC: "test_reconstruction_error"
+  {% else %}
+  PRIMARY_METRIC: "test_accuracy"
+  {% endif %}
 
 stages:
   - quality
@@ -50,7 +59,7 @@ code_quality:
     # Security (just the essentials)
     - echo "🔒 Security scan..."
     - bandit -r src/ scripts/ -ll || true
-    - safety check || true
+    - safety scan || true
 
     - echo "✅ Code quality checks complete"
   rules:
@@ -63,15 +72,25 @@ code_quality:
 
 data_validation:
   stage: validate
-  image: continuumio/miniconda3:latest
+  image: python:${PYTHON_VERSION}-slim
   before_script:
-    - conda env create -f environment.yml || conda env update -f environment.yml
+    - pip install --upgrade pip
+    - pip install dvc dvc-s3 great-expectations
+    - |
+      if [ -n "$DVC_S3_BUCKET" ]; then
+        dvc remote add -f ${DVC_REMOTE_NAME} s3://$DVC_S3_BUCKET
+        if [ -n "$AWS_ACCESS_KEY_ID" ]; then dvc remote modify ${DVC_REMOTE_NAME} access_key_id $AWS_ACCESS_KEY_ID; fi
+        if [ -n "$AWS_SECRET_ACCESS_KEY" ]; then dvc remote modify ${DVC_REMOTE_NAME} secret_access_key $AWS_SECRET_ACCESS_KEY; fi
+        if [ -n "$AWS_DEFAULT_REGION" ]; then dvc remote modify ${DVC_REMOTE_NAME} region $AWS_DEFAULT_REGION; fi
+        if [ -n "$AWS_ENDPOINT_URL" ]; then dvc remote modify ${DVC_REMOTE_NAME} endpointurl $AWS_ENDPOINT_URL; fi
+        dvc remote default ${DVC_REMOTE_NAME}
+      fi
   script:
     - echo "📊 Validating data quality..."
-    - conda run -n {{ project_name }} dvc pull || echo "⚠️ DVC pull failed"
+    - dvc pull -r ${DVC_REMOTE_NAME} || dvc pull || echo "⚠️ DVC pull failed (ensure cloud remote configured and seeded)"
 
     # Single validation script with Great Expectations
-    - conda run -n {{ project_name }} python scripts/validate_data.py --data ${DATA_PATH}
+    - python scripts/validate_data.py --data ${DATA_PATH}
 
     - echo "✅ Validation complete"
   rules:
@@ -90,9 +109,18 @@ train_challenger:
       alias: mlflow
   before_script:
     - conda env create -f environment.yml || conda env update -f environment.yml
+    - |
+      if [ -n "$DVC_S3_BUCKET" ]; then
+        conda run -n {{ project_name }} dvc remote add -f ${DVC_REMOTE_NAME} s3://$DVC_S3_BUCKET
+        if [ -n "$AWS_ACCESS_KEY_ID" ]; then conda run -n {{ project_name }} dvc remote modify ${DVC_REMOTE_NAME} access_key_id $AWS_ACCESS_KEY_ID; fi
+        if [ -n "$AWS_SECRET_ACCESS_KEY" ]; then conda run -n {{ project_name }} dvc remote modify ${DVC_REMOTE_NAME} secret_access_key $AWS_SECRET_ACCESS_KEY; fi
+        if [ -n "$AWS_DEFAULT_REGION" ]; then conda run -n {{ project_name }} dvc remote modify ${DVC_REMOTE_NAME} region $AWS_DEFAULT_REGION; fi
+        if [ -n "$AWS_ENDPOINT_URL" ]; then conda run -n {{ project_name }} dvc remote modify ${DVC_REMOTE_NAME} endpointurl $AWS_ENDPOINT_URL; fi
+        conda run -n {{ project_name }} dvc remote default ${DVC_REMOTE_NAME}
+      fi
   script:
     - echo "🚀 Training challenger model..."
-    - conda run -n {{ project_name }} dvc pull
+    - conda run -n {{ project_name }} dvc pull -r ${DVC_REMOTE_NAME} || conda run -n {{ project_name }} dvc pull
 
     # Train using DVC pipeline
     - conda run -n {{ project_name }} dvc repro
@@ -119,13 +147,14 @@ evaluate_models:
   image: iterativeai/cml:0-dvc2-base1  # Official CML image
   needs: ["train_challenger"]
   before_script:
-    - conda env create -f environment.yml || conda env update -f environment.yml
+    - pip install --upgrade pip
+    - pip install mlflow dvc
   script:
     - echo "📊 Comparing models..."
 
     # Compare challenger vs champion
     - |
-      conda run -n {{ project_name }} python scripts/compare_models.py \
+      python scripts/compare_models.py \
         --experiment-name ${EXPERIMENT_NAME} \
         --metric ${PRIMARY_METRIC} \
         --improvement-threshold 0.01 \
@@ -133,7 +162,7 @@ evaluate_models:
 
     # Generate markdown report using Python
     - |
-      conda run -n {{ project_name }} python scripts/generate_cml_report.py \
+      python scripts/generate_cml_report.py \
         --comparison comparison.json \
         --output report.md
 
@@ -148,7 +177,7 @@ evaluate_models:
 
     # Decide on promotion
     - |
-      PROMOTE=$(conda run -n {{ project_name }} python -c "
+      PROMOTE=$(python -c "
       import json
       with open('comparison.json') as f:
           data = json.load(f)
@@ -178,13 +207,14 @@ evaluate_models:
 
 promote_model:
   stage: evaluate
-  image: continuumio/miniconda3:latest
+  image: python:${PYTHON_VERSION}-slim
   needs: ["evaluate_models"]
   before_script:
-    - conda env create -f environment.yml || conda env update -f environment.yml
+    - pip install --upgrade pip
+    - pip install mlflow
   script:
     - echo "🏆 Promoting challenger to champion..."
-    - conda run -n {{ project_name }} python scripts/promote_model.py --experiment-name ${EXPERIMENT_NAME}
+    - python scripts/promote_model.py --experiment-name ${EXPERIMENT_NAME}
   rules:
     - if: '$PROMOTE_MODEL == "yes" && $CI_COMMIT_BRANCH == "main"'
 
@@ -224,12 +254,13 @@ build_docker:
 
 rollback_model:
   stage: deploy
-  image: continuumio/miniconda3:latest
+  image: python:${PYTHON_VERSION}-slim
   before_script:
-    - conda env create -f environment.yml || conda env update -f environment.yml
+    - pip install --upgrade pip
+    - pip install mlflow
   script:
     - echo "⏪ Rolling back to previous champion..."
-    - conda run -n {{ project_name }} python scripts/rollback_model.py --experiment-name ${EXPERIMENT_NAME}
+    - python scripts/rollback_model.py --experiment-name ${EXPERIMENT_NAME}
   when: manual
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
@@ -237,12 +268,13 @@ rollback_model:
 # Push data to remote (manual for cost control)
 sync_data_remote:
   stage: deploy
-  image: continuumio/miniconda3:latest
+  image: python:${PYTHON_VERSION}-slim
   before_script:
-    - conda env create -f environment.yml || conda env update -f environment.yml
+    - pip install --upgrade pip
+    - pip install dvc dvc-s3
   script:
     - echo "☁️ Syncing data to remote storage..."
-    - conda run -n {{ project_name }} dvc push -r aws-store || echo "Configure AWS credentials first"
+    - dvc push -r aws-store || echo "Configure AWS credentials first"
   when: manual
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
