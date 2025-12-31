@@ -102,11 +102,12 @@ data_validation:
     - dvc pull -r ${DVC_REMOTE_NAME} || dvc pull || echo "⚠️ DVC pull failed (ensure cloud remote configured and seeded)"
 
     # Single validation script with Great Expectations
-    - python scripts/validate_data.py \
-      --data ${DATA_PATH} \
-      --suite iris_suite \
-      --columns "sepal length (cm),sepal width (cm),petal length (cm),petal width (cm),species" \
-      --column-types "sepal length (cm):float64,sepal width (cm):float64,petal length (cm):float64,petal width (cm):float64,species:int64"
+    - |
+      python scripts/validate_data.py \
+        --data ${DATA_PATH} \
+        --suite iris_suite \
+        --columns "sepal length (cm),sepal width (cm),petal length (cm),petal width (cm),species" \
+        --column-types "sepal length (cm):float64,sepal width (cm):float64,petal length (cm):float64,petal width (cm):float64,species:int64"
 
     - echo "✅ Validation complete"
   rules:
