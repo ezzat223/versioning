@@ -133,12 +133,12 @@ train_challenger:
     - conda activate {{ project_name }}
     - |
       if [ -n "$DVC_S3_BUCKET" ]; then
-        conda run -n {{ project_name }} dvc remote add -f ${DVC_REMOTE_NAME} s3://$DVC_S3_BUCKET
-        if [ -n "$AWS_ACCESS_KEY_ID" ]; then conda run -n {{ project_name }} dvc remote modify ${DVC_REMOTE_NAME} access_key_id $AWS_ACCESS_KEY_ID; fi
-        if [ -n "$AWS_SECRET_ACCESS_KEY" ]; then conda run -n {{ project_name }} dvc remote modify ${DVC_REMOTE_NAME} secret_access_key $AWS_SECRET_ACCESS_KEY; fi
-        if [ -n "$AWS_DEFAULT_REGION" ]; then conda run -n {{ project_name }} dvc remote modify ${DVC_REMOTE_NAME} region $AWS_DEFAULT_REGION; fi
-        if [ -n "$AWS_ENDPOINT_URL" ]; then conda run -n {{ project_name }} dvc remote modify ${DVC_REMOTE_NAME} endpointurl $AWS_ENDPOINT_URL; fi
-        conda run -n {{ project_name }} dvc remote default ${DVC_REMOTE_NAME}
+        dvc remote add -f ${DVC_REMOTE_NAME} s3://$DVC_S3_BUCKET
+        [ -n "$AWS_ACCESS_KEY_ID" ] && dvc remote modify ${DVC_REMOTE_NAME} access_key_id $AWS_ACCESS_KEY_ID
+        [ -n "$AWS_SECRET_ACCESS_KEY" ] && dvc remote modify ${DVC_REMOTE_NAME} secret_access_key $AWS_SECRET_ACCESS_KEY
+        [ -n "$AWS_DEFAULT_REGION" ] && dvc remote modify ${DVC_REMOTE_NAME} region $AWS_DEFAULT_REGION
+        [ -n "$AWS_ENDPOINT_URL" ] && dvc remote modify ${DVC_REMOTE_NAME} endpointurl $AWS_ENDPOINT_URL
+        dvc remote default ${DVC_REMOTE_NAME}
       fi
   script:
     - echo "🚀 Training challenger model..."
