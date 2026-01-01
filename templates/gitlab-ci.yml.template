@@ -68,7 +68,8 @@ cache:
       fi
     - source /opt/conda/etc/profile.d/conda.sh
     - conda activate {{ project_name }}
-    - echo "✅ Conda environment ready: $(which python)"
+    - |
+      echo "✅ Conda environment ready: $(which python)"
 
 .dvc_setup: &dvc_setup
   - |
