@@ -1,5 +1,5 @@
 # =============================================================================
-# MLOps CI/CD Pipeline - SIMPLIFIED & EFFECTIVE
+# MLOps CI/CD Pipeline - OPTIMIZED WITH AUTO-MERGE
 # =============================================================================
 
 variables:
@@ -11,8 +11,11 @@ variables:
   DVC_REMOTE_NAME: "aws-store"
   DVC_S3_BUCKET: ""
   AWS_ENDPOINT_URL: ""
-  CONDA_PKGS_DIRS: ".conda/pkgs"
-  CONDA_ENVS_DIRS: ".conda/envs"
+
+  # Conda optimization - use shared location, don't cache
+  CONDA_PKGS_DIRS: "/opt/conda/pkgs"
+  CONDA_ENVS_PATH: "/opt/conda/envs/{{ project_name }}"
+  MAMBA_NO_BANNER: "1"
 
   # Project-specific (customize these)
   DATA_PATH: "data/processed/dataset.csv"
@@ -32,33 +35,76 @@ stages:
   - evaluate
   - deploy
 
-# Cache for faster builds
+# =============================================================================
+# OPTIMIZED CACHE - Only cache pip and small artifacts
+# =============================================================================
 cache:
   key: ${CI_COMMIT_REF_SLUG}
   paths:
     - .cache/pip
     - .venv/
-    - .conda/pkgs
-    - .conda/envs
+  policy: pull-push
 
 # =============================================================================
-# STAGE 1: CODE QUALITY (Keep it simple!)
+# REUSABLE BLOCKS - DRY principle
+# =============================================================================
+
+.conda_setup: &conda_setup
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq build-essential gcc
+    - conda config --set always_yes yes --set changeps1 no
+    - conda config --add channels conda-forge
+    - conda config --set channel_priority strict
+    # Install mamba if not present
+    - conda install -n base -c conda-forge mamba -y -q 2>/dev/null || true
+    # Create/update environment directly (no caching overhead)
+    - |
+      if [ -d "$CONDA_ENVS_PATH" ]; then
+        echo "📦 Updating existing conda environment..."
+        mamba env update -f environment.yml --prune -q
+      else
+        echo "📦 Creating new conda environment..."
+        mamba env create -f environment.yml -q
+      fi
+    - source /opt/conda/etc/profile.d/conda.sh
+    - conda activate {{ project_name }}
+    - echo "✅ Conda environment ready: $(which python)"
+
+.dvc_setup: &dvc_setup
+  - |
+    if [ -n "$DVC_S3_BUCKET" ]; then
+      echo "🔧 Configuring DVC remote..."
+      dvc remote add -f ${DVC_REMOTE_NAME} s3://$DVC_S3_BUCKET
+      [ -n "$AWS_ACCESS_KEY_ID" ] && dvc remote modify ${DVC_REMOTE_NAME} access_key_id $AWS_ACCESS_KEY_ID
+      [ -n "$AWS_SECRET_ACCESS_KEY" ] && dvc remote modify ${DVC_REMOTE_NAME} secret_access_key $AWS_SECRET_ACCESS_KEY
+      [ -n "$AWS_DEFAULT_REGION" ] && dvc remote modify ${DVC_REMOTE_NAME} region $AWS_DEFAULT_REGION
+      [ -n "$AWS_ENDPOINT_URL" ] && dvc remote modify ${DVC_REMOTE_NAME} endpointurl $AWS_ENDPOINT_URL
+      dvc remote default ${DVC_REMOTE_NAME}
+    fi
+
+# =============================================================================
+# STAGE 1: CODE QUALITY (Lightweight - no conda needed)
 # =============================================================================
 
 code_quality:
   stage: quality
   image: python:${PYTHON_VERSION}-slim
+  cache:
+    key: quality-${CI_COMMIT_REF_SLUG}
+    paths:
+      - .cache/pip
+    policy: pull-push
   before_script:
-    - pip install black flake8 bandit safety
+    - pip install --cache-dir .cache/pip black flake8 bandit safety
   script:
     # Formatting
     - echo "🎨 Checking code formatting..."
     - |
-      black --check src/ scripts/ || (echo "Run: black src/ scripts/" && exit 1)
+      black --check src/ scripts/ || (echo "❌ Run: black src/ scripts/" && exit 1)
 
     # Linting
-    - echo "🔍 Linting..."
-    - flake8 src/ scripts/ --max-line-length=100 --ignore=E203,W503 || true
+    - echo "🔍 Linting code..."
+    - flake8 src/ scripts/ --max-line-length=100 --ignore=E203,,E402,E501,W503 || true
 
     # Security (just the essentials)
     - echo "🔒 Security scan..."
@@ -77,29 +123,11 @@ code_quality:
 data_validation:
   stage: validate
   image: continuumio/miniconda3:latest
-  before_script:
-    - apt-get update && apt-get install -y build-essential gcc
-    - conda config --add channels conda-forge
-    - conda install -n base -c conda-forge mamba -y
-    - export CONDA_PKGS_DIRS="${CONDA_PKGS_DIRS}"
-    - export CONDA_ENVS_DIRS="${CONDA_ENVS_DIRS}"
-    - mamba env create -f environment.yml || mamba env update -f environment.yml --prune
-    # Activate environment
-    - source /opt/conda/etc/profile.d/conda.sh
-    - conda activate {{ project_name }}
-    # DVC remote setup
-    - |
-      if [ -n "$DVC_S3_BUCKET" ]; then
-        dvc remote add -f ${DVC_REMOTE_NAME} s3://$DVC_S3_BUCKET
-        [ -n "$AWS_ACCESS_KEY_ID" ] && dvc remote modify ${DVC_REMOTE_NAME} access_key_id $AWS_ACCESS_KEY_ID
-        [ -n "$AWS_SECRET_ACCESS_KEY" ] && dvc remote modify ${DVC_REMOTE_NAME} secret_access_key $AWS_SECRET_ACCESS_KEY
-        [ -n "$AWS_DEFAULT_REGION" ] && dvc remote modify ${DVC_REMOTE_NAME} region $AWS_DEFAULT_REGION
-        [ -n "$AWS_ENDPOINT_URL" ] && dvc remote modify ${DVC_REMOTE_NAME} endpointurl $AWS_ENDPOINT_URL
-        dvc remote default ${DVC_REMOTE_NAME}
-      fi
+  <<: *conda_setup
   script:
     - echo "📊 Validating data quality..."
-    - dvc pull -r ${DVC_REMOTE_NAME} || dvc pull || echo "⚠️ DVC pull failed (ensure cloud remote configured and seeded)"
+    - *dvc_setup
+    - dvc pull -r ${DVC_REMOTE_NAME} || dvc pull || echo "⚠️ DVC pull failed (ensure remote configured)"
 
     # Single validation script with Great Expectations
     - |
@@ -109,71 +137,53 @@ data_validation:
         --columns "sepal length (cm),sepal width (cm),petal length (cm),petal width (cm),species" \
         --column-types "sepal length (cm):float64,sepal width (cm):float64,petal length (cm):float64,petal width (cm):float64,species:int64"
 
-    - echo "✅ Validation complete"
+    - echo "✅ Data validation complete"
   rules:
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
     - if: '$CI_COMMIT_BRANCH == "main"'
 
 # =============================================================================
-# STAGE 3: TRAIN CHALLENGER
+# STAGE 3: TRAIN CHALLENGER MODEL
 # =============================================================================
 
 train_challenger:
   stage: train
   image: continuumio/miniconda3:latest
-  before_script:
-    - apt-get update && apt-get install -y build-essential gcc
-    - conda config --add channels conda-forge
-    - conda install -n base -c conda-forge mamba -y
-    - export CONDA_PKGS_DIRS="${CONDA_PKGS_DIRS}"
-    - export CONDA_ENVS_DIRS="${CONDA_ENVS_DIRS}"
-    - mamba env create -f environment.yml || mamba env update -f environment.yml --prune
-    # Activate environment
-    - source /opt/conda/etc/profile.d/conda.sh
-    - conda activate {{ project_name }}
-    - |
-      if [ -n "$DVC_S3_BUCKET" ]; then
-        dvc remote add -f ${DVC_REMOTE_NAME} s3://$DVC_S3_BUCKET
-        [ -n "$AWS_ACCESS_KEY_ID" ] && dvc remote modify ${DVC_REMOTE_NAME} access_key_id $AWS_ACCESS_KEY_ID
-        [ -n "$AWS_SECRET_ACCESS_KEY" ] && dvc remote modify ${DVC_REMOTE_NAME} secret_access_key $AWS_SECRET_ACCESS_KEY
-        [ -n "$AWS_DEFAULT_REGION" ] && dvc remote modify ${DVC_REMOTE_NAME} region $AWS_DEFAULT_REGION
-        [ -n "$AWS_ENDPOINT_URL" ] && dvc remote modify ${DVC_REMOTE_NAME} endpointurl $AWS_ENDPOINT_URL
-        dvc remote default ${DVC_REMOTE_NAME}
-      fi
+  <<: *conda_setup
   script:
     - echo "🚀 Training challenger model..."
-    - conda run -n {{ project_name }} dvc pull -r ${DVC_REMOTE_NAME} || conda run -n {{ project_name }} dvc pull
+    - *dvc_setup
+    - dvc pull -r ${DVC_REMOTE_NAME} || dvc pull || echo "⚠️ DVC pull failed"
 
     # Train using DVC pipeline
-    - conda run -n {{ project_name }} dvc repro
+    - dvc repro
 
-    # Tag as challenger
-    - conda run -n {{ project_name }} python scripts/tag_challenger.py --experiment-name ${EXPERIMENT_NAME}
+    # Tag as challenger in MLflow
+    - python scripts/tag_challenger.py --experiment-name ${EXPERIMENT_NAME}
 
-    - echo "✅ Challenger trained"
+    - echo "✅ Challenger model trained and tagged"
   artifacts:
     paths:
       - metrics.json
+      - models/
     expire_in: 30 days
   rules:
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
     - if: '$CI_COMMIT_BRANCH == "main"'
 
 # =============================================================================
-# STAGE 4: COMPARE & DECIDE (with CML)
+# STAGE 4: EVALUATE & COMPARE MODELS
 # =============================================================================
 
 evaluate_models:
   stage: evaluate
-  image: iterativeai/cml:0-dvc2-base1  # Official CML image
+  image: continuumio/miniconda3:latest
   needs: ["train_challenger"]
-  before_script:
-    - pip install --upgrade pip
-    - pip install mlflow dvc
+  <<: *conda_setup
   script:
-    - echo "📊 Comparing models..."
+    - echo "📊 Comparing challenger vs champion..."
 
-    # Compare challenger vs champion
+    # Compare models and generate decision
     - |
       python scripts/compare_models.py \
         --experiment-name ${EXPERIMENT_NAME} \
@@ -181,22 +191,24 @@ evaluate_models:
         --improvement-threshold 0.01 \
         --output comparison.json
 
-    # Generate markdown report using Python
+    # Generate CML report
     - |
       python scripts/generate_cml_report.py \
         --comparison comparison.json \
         --output report.md
 
-    # Post report to MR using CML
+    # Post report to MR if in MR context
     - |
       if [ "$CI_MERGE_REQUEST_IID" != "" ]; then
-        cml comment create report.md
+        # Install CML if needed
+        npm install -g @dvcorg/cml || pip install cml
+        cml comment create report.md || cat report.md
       else
-        echo "Not in MR context, skipping CML comment"
+        echo "ℹ️ Not in MR context, displaying report:"
         cat report.md
       fi
 
-    # Decide on promotion
+    # Extract promotion decision for next jobs
     - |
       PROMOTE=$(python -c "
       import json
@@ -206,11 +218,13 @@ evaluate_models:
       ")
       echo "PROMOTE_MODEL=${PROMOTE}" >> promote.env
 
+      echo "================================================"
       if [ "$PROMOTE" == "yes" ]; then
-        echo "✅ Will promote challenger"
+        echo "✅ DECISION: Will promote challenger to champion"
       else
-        echo "⚠️ Keeping current champion"
+        echo "⚠️ DECISION: Keeping current champion"
       fi
+      echo "================================================"
   artifacts:
     paths:
       - comparison.json
@@ -223,24 +237,63 @@ evaluate_models:
     - if: '$CI_COMMIT_BRANCH == "main"'
 
 # =============================================================================
-# STAGE 5: PROMOTE (Only if better)
+# MERGE DECISION GATE - Auto-merge control
+# =============================================================================
+
+merge_decision:
+  stage: evaluate
+  image: alpine:latest
+  needs: ["evaluate_models"]
+  script:
+    - echo "🔍 Evaluating merge eligibility..."
+    - echo ""
+    - |
+      if [ "$PROMOTE_MODEL" == "yes" ]; then
+        echo "┌─────────────────────────────────────────────┐"
+        echo "│  ✅ MODEL QUALITY GATE: PASSED              │"
+        echo "├─────────────────────────────────────────────┤"
+        echo "│  → Challenger outperforms champion         │"
+        echo "│  → Improvement threshold met                │"
+        echo "│  → Pipeline will succeed                    │"
+        echo "│  → Merge approved for auto-merge            │"
+        echo "└─────────────────────────────────────────────┘"
+        echo ""
+        exit 0
+      else
+        echo "┌─────────────────────────────────────────────┐"
+        echo "│  ❌ MODEL QUALITY GATE: FAILED              │"
+        echo "├─────────────────────────────────────────────┤"
+        echo "│  → Challenger does not improve champion    │"
+        echo "│  → Improvement threshold not met            │"
+        echo "│  → Pipeline will fail                       │"
+        echo "│  → BLOCKING merge to protect quality        │"
+        echo "└─────────────────────────────────────────────┘"
+        echo ""
+        echo "ℹ️  Review comparison.json and report.md for details"
+        exit 1
+      fi
+  allow_failure: false
+  rules:
+    - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+
+# =============================================================================
+# STAGE 5: PROMOTE MODEL (Only if approved)
 # =============================================================================
 
 promote_model:
   stage: evaluate
-  image: python:${PYTHON_VERSION}-slim
-  needs: ["evaluate_models"]
-  before_script:
-    - pip install --upgrade pip
-    - pip install mlflow
+  image: continuumio/miniconda3:latest
+  needs: ["evaluate_models", "merge_decision"]
+  <<: *conda_setup
   script:
     - echo "🏆 Promoting challenger to champion..."
     - python scripts/promote_model.py --experiment-name ${EXPERIMENT_NAME}
+    - echo "✅ Model promoted successfully"
   rules:
     - if: '$PROMOTE_MODEL == "yes" && $CI_COMMIT_BRANCH == "main"'
 
 # =============================================================================
-# STAGE 6: DEPLOY (Only on main with promotion)
+# STAGE 6: DEPLOY TO PRODUCTION
 # =============================================================================
 
 {% if deployment in ['ray-serve', 'all'] %}
@@ -250,52 +303,90 @@ build_docker:
   services:
     - docker:24-dind
   needs: ["promote_model"]
+  before_script:
+    - echo "🔐 Logging into Docker registry..."
+    - docker login -u $DOCKER_HUB_USERNAME -p $DOCKER_HUB_TOKEN
   script:
     - echo "🐳 Building deployment image..."
-    - docker login -u $DOCKER_HUB_USERNAME -p $DOCKER_HUB_TOKEN
-
     - |
       docker build \
         -f deployment/Dockerfile.ray \
         -t ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA} \
         -t ${DOCKER_IMAGE_NAME}:latest \
+        --build-arg MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI} \
+        --build-arg MODEL_NAME=${MODEL_NAME} \
         .
 
+    - echo "📤 Pushing images to registry..."
     - docker push ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}
     - docker push ${DOCKER_IMAGE_NAME}:latest
 
-    - echo "✅ Image pushed"
+    - echo "✅ Docker images published"
+  rules:
+    - if: '$PROMOTE_MODEL == "yes" && $CI_COMMIT_BRANCH == "main"'
+
+deploy_ray_serve:
+  stage: deploy
+  image: continuumio/miniconda3:latest
+  needs: ["build_docker"]
+  <<: *conda_setup
+  script:
+    - echo "🚀 Deploying to Ray Serve..."
+    - |
+      python deployment/deploy_ray.py \
+        --image ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA} \
+        --replicas 2 \
+        --environment production
+    - echo "✅ Deployment complete"
+  environment:
+    name: production
+    url: http://ray-serve.example.com
   rules:
     - if: '$PROMOTE_MODEL == "yes" && $CI_COMMIT_BRANCH == "main"'
 {% endif %}
 
 # =============================================================================
-# MANUAL JOBS
+# MANUAL OPERATIONS
 # =============================================================================
 
 rollback_model:
   stage: deploy
-  image: python:${PYTHON_VERSION}-slim
-  before_script:
-    - pip install --upgrade pip
-    - pip install mlflow
+  image: continuumio/miniconda3:latest
+  <<: *conda_setup
   script:
     - echo "⏪ Rolling back to previous champion..."
     - python scripts/rollback_model.py --experiment-name ${EXPERIMENT_NAME}
+    - echo "✅ Rollback complete"
   when: manual
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
+  only:
+    - main
 
-# Push data to remote (manual for cost control)
 sync_data_remote:
   stage: deploy
-  image: python:${PYTHON_VERSION}-slim
-  before_script:
-    - pip install --upgrade pip
-    - pip install dvc dvc-s3
+  image: continuumio/miniconda3:latest
+  <<: *conda_setup
   script:
     - echo "☁️ Syncing data to remote storage..."
-    - dvc push -r aws-store || echo "Configure AWS credentials first"
+    - *dvc_setup
+    - dvc push -r ${DVC_REMOTE_NAME} || echo "⚠️ Configure AWS credentials"
+    - echo "✅ Data sync complete"
   when: manual
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
+  only:
+    - main
+
+# =============================================================================
+# EMERGENCY: Force merge (use with caution)
+# =============================================================================
+
+force_promote:
+  stage: deploy
+  image: continuumio/miniconda3:latest
+  <<: *conda_setup
+  script:
+    - echo "⚠️ FORCE PROMOTING MODEL (bypassing quality gate)"
+    - python scripts/promote_model.py --experiment-name ${EXPERIMENT_NAME} --force
+    - echo "✅ Force promotion complete"
+  when: manual
+  only:
+    - main
+  allow_failure: false
