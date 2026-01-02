@@ -14,7 +14,7 @@ variables:
 
   # Conda optimization - use shared location, don't cache
   CONDA_PKGS_DIRS: "/opt/conda/pkgs"
-  CONDA_ENVS_PATH: "/opt/conda/envs/{{ project_name }}"
+  CONDA_ENV_NAME: "{{ project_name }}"
   MAMBA_NO_BANNER: "1"
 
   # Project-specific (customize these)
@@ -51,7 +51,8 @@ cache:
 
 .conda_setup: &conda_setup
   before_script:
-    - apt-get update -qq && apt-get install -y -qq build-essential gcc
+    - echo "🔧 Setting up Conda environment..."
+    - apt-get update -qq && apt-get install -y -qq build-essential gcc curl
     - conda config --set always_yes yes --set changeps1 no
     - conda config --add channels conda-forge
     - conda config --set channel_priority strict
@@ -59,17 +60,20 @@ cache:
     - conda install -n base -c conda-forge mamba -y -q 2>/dev/null || true
     # Create/update environment directly (no caching overhead)
     - |
-      if [ -d "$CONDA_ENVS_PATH" ]; then
+      if conda env list | grep -q "^${CONDA_ENV_NAME} "; then
         echo "📦 Updating existing conda environment..."
-        mamba env update -f environment.yml --prune -q
+        mamba env update -n ${CONDA_ENV_NAME} -f environment.yml --prune -q
       else
         echo "📦 Creating new conda environment..."
         mamba env create -f environment.yml -q
       fi
     - source /opt/conda/etc/profile.d/conda.sh
-    - conda activate {{ project_name }}
+    - conda activate ${CONDA_ENV_NAME}
+    - echo "✅ Conda environment ready"
     - |
-      echo "✅ Conda environment ready: $(which python)"
+      echo "Python location: $(which python)"
+    - |
+      echo "Python version: $(python --version)"
 
 .dvc_setup: &dvc_setup
   - |
@@ -98,16 +102,13 @@ code_quality:
   before_script:
     - pip install --cache-dir .cache/pip black flake8 bandit safety
   script:
-    # Formatting
     - echo "🎨 Checking code formatting..."
     - |
       black --check src/ scripts/ || (echo "❌ Run: black src/ scripts/" && exit 1)
 
-    # Linting
     - echo "🔍 Linting code..."
-    - flake8 src/ scripts/ --max-line-length=100 --ignore=E203,,E402,E501,W503 || true
+    - flake8 src/ scripts/ --max-line-length=100 --ignore=E203,E402,E501,W503 || true
 
-    # Security (just the essentials)
     - echo "🔒 Security scan..."
     - bandit -r src/ scripts/ -ll || true
     - safety scan || true
@@ -130,7 +131,6 @@ data_validation:
     - *dvc_setup
     - dvc pull -r ${DVC_REMOTE_NAME} || dvc pull || echo "⚠️ DVC pull failed (ensure remote configured)"
 
-    # Single validation script with Great Expectations
     - |
       python scripts/validate_data.py \
         --data ${DATA_PATH} \
@@ -200,10 +200,21 @@ evaluate_models:
 
     # Post report to MR if in MR context
     - |
-      if [ "$CI_MERGE_REQUEST_IID" != "" ]; then
-        # Install CML if needed
-        npm install -g @dvcorg/cml || pip install cml
-        cml comment create report.md || cat report.md
+      if [ -n "$CI_MERGE_REQUEST_IID" ]; then
+        echo "📝 Posting report to merge request..."
+
+        # Install Node.js for CML
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        apt-get install -y nodejs
+
+        # Install CML (the correct Node.js version)
+        npm install -g @dvcorg/cml
+
+        # Post comment to MR
+        cml comment create report.md --target=pr || {
+          echo "⚠️ CML comment failed, displaying report locally:"
+          cat report.md
+        }
       else
         echo "ℹ️ Not in MR context, displaying report:"
         cat report.md
@@ -253,7 +264,7 @@ merge_decision:
         echo "┌─────────────────────────────────────────────┐"
         echo "│  ✅ MODEL QUALITY GATE: PASSED              │"
         echo "├─────────────────────────────────────────────┤"
-        echo "│  → Challenger outperforms champion         │"
+        echo "│  → Challenger outperforms champion          │"
         echo "│  → Improvement threshold met                │"
         echo "│  → Pipeline will succeed                    │"
         echo "│  → Merge approved for auto-merge            │"
@@ -264,7 +275,7 @@ merge_decision:
         echo "┌─────────────────────────────────────────────┐"
         echo "│  ❌ MODEL QUALITY GATE: FAILED              │"
         echo "├─────────────────────────────────────────────┤"
-        echo "│  → Challenger does not improve champion    │"
+        echo "│  → Challenger does not improve champion     │"
         echo "│  → Improvement threshold not met            │"
         echo "│  → Pipeline will fail                       │"
         echo "│  → BLOCKING merge to protect quality        │"
