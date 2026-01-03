@@ -343,7 +343,7 @@ build_docker:
     - echo "🐳 Building deployment image..."
     - |
       docker build \
-        -f deployment/Dockerfile.ray \
+        -f Dockerfile.ray \
         -t ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA} \
         -t ${DOCKER_IMAGE_NAME}:latest \
         --build-arg MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI} \
