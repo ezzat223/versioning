@@ -57,18 +57,32 @@ def create_expectation_suite(
         print(f"✓ Created new suite: {suite_name}")
 
     # =========================================================================
-    # BASIC EXPECTATIONS (Always applicable)
+    # TABLE-LEVEL EXPECTATIONS
     # =========================================================================
 
-    # Expectation 1: Dataset should not be empty
-    suite.add_expectation(
-        gx.expectations.ExpectTableRowCountToBeBetween(min_value=1, max_value=None)
-    )
+    # Dataset must not be empty
+    suite.add_expectation(gx.expectations.ExpectTableRowCountToBeBetween(min_value=1))
 
     # Expectation 2: No completely null columns
     suite.add_expectation(
         gx.expectations.ExpectTableColumnCountToBeBetween(min_value=1, max_value=None)
     )
+
+    # If schema provided → enforce it strictly
+    if columns:
+        suite.add_expectation(
+            gx.expectations.ExpectTableColumnsToMatchSet(
+                column_set=columns,
+                exact_match=True,
+            )
+        )
+
+    # Validate column data types (from CLI)
+    if column_types:
+        for col, typ in column_types.items():
+            suite.add_expectation(
+                gx.expectations.ExpectColumnValuesToBeOfType(column=col, type_=typ)
+            )
 
     # =========================================================================
     # CUSTOM EXPECTATIONS - ADD YOUR OWN BELOW!
