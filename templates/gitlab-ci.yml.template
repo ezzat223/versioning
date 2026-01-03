@@ -1,5 +1,15 @@
 # =============================================================================
-# MLOps CI/CD Pipeline - OPTIMIZED WITH AUTO-MERGE
+# MLOps CI/CD Pipeline - FULLY AUTOMATED WITH QUALITY GATES
+# =============================================================================
+#
+# WORKFLOW:
+# 1. MR Pipeline: quality → validate → train → evaluate → promote → auto-merge
+# 2. Main Pipeline: Only runs deployment jobs (no re-training/evaluation)
+#
+# REQUIREMENTS:
+# - Set GITLAB_API_TOKEN in CI/CD variables (Project Settings > CI/CD > Variables)
+#   Scope: api, write_repository | Create at: User Settings > Access Tokens
+#
 # =============================================================================
 
 variables:
@@ -116,7 +126,6 @@ code_quality:
     - echo "✅ Code quality checks complete"
   rules:
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
-    - if: '$CI_COMMIT_BRANCH == "main"'
 
 # =============================================================================
 # STAGE 2: DATA VALIDATION
@@ -141,7 +150,6 @@ data_validation:
     - echo "✅ Data validation complete"
   rules:
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
-    - if: '$CI_COMMIT_BRANCH == "main"'
 
 # =============================================================================
 # STAGE 3: TRAIN CHALLENGER MODEL
@@ -170,7 +178,6 @@ train_challenger:
     expire_in: 30 days
   rules:
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
-    - if: '$CI_COMMIT_BRANCH == "main"'
 
 # =============================================================================
 # STAGE 4: EVALUATE & COMPARE MODELS
@@ -246,7 +253,6 @@ evaluate_models:
     expire_in: 30 days
   rules:
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
-    - if: '$CI_COMMIT_BRANCH == "main"'
 
 # =============================================================================
 # MERGE DECISION GATE - Auto-merge control
@@ -256,6 +262,8 @@ merge_decision:
   stage: evaluate
   image: alpine:latest
   needs: ["evaluate_models"]
+  before_script:
+    - apk add --no-cache curl jq
   script:
     - echo "🔍 Evaluating merge eligibility..."
     - echo ""
@@ -267,9 +275,22 @@ merge_decision:
         echo "│  → Challenger outperforms champion          │"
         echo "│  → Improvement threshold met                │"
         echo "│  → Pipeline will succeed                    │"
-        echo "│  → Merge approved for auto-merge            │"
+        echo "│  → Triggering auto-merge                    │"
         echo "└─────────────────────────────────────────────┘"
         echo ""
+
+        # Auto-merge the MR using GitLab API
+        if [ -n "$CI_MERGE_REQUEST_IID" ]; then
+          echo "🤖 Auto-merging MR !${CI_MERGE_REQUEST_IID}..."
+
+          curl --request PUT \
+            --header "PRIVATE-TOKEN: ${GITLAB_API_TOKEN}" \
+            --url "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/merge" \
+            --data "should_remove_source_branch=true" \
+            --data "merge_when_pipeline_succeeds=true" \
+            --data "squash=false" || echo "⚠️ Auto-merge failed - ensure GITLAB_API_TOKEN is set"
+        fi
+
         exit 0
       else
         echo "┌─────────────────────────────────────────────┐"
@@ -289,7 +310,7 @@ merge_decision:
     - if: '$CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
 
 # =============================================================================
-# STAGE 5: PROMOTE MODEL (Only if approved)
+# STAGE 5: PROMOTE MODEL (Only runs in MR context before merge)
 # =============================================================================
 
 promote_model:
@@ -302,10 +323,10 @@ promote_model:
     - python scripts/promote_model.py --experiment-name ${EXPERIMENT_NAME}
     - echo "✅ Model promoted successfully"
   rules:
-    - if: '$PROMOTE_MODEL == "yes" && $CI_COMMIT_BRANCH == "main"'
+    - if: '$PROMOTE_MODEL == "yes" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
 
 # =============================================================================
-# STAGE 6: DEPLOY TO PRODUCTION
+# STAGE 6: DEPLOY TO PRODUCTION (Only runs on main after merge)
 # =============================================================================
 
 {% if deployment in ['ray-serve', 'all'] %}
@@ -314,7 +335,7 @@ build_docker:
   image: docker:24
   services:
     - docker:24-dind
-  needs: ["promote_model"]
+  needs: []
   before_script:
     - echo "🔐 Logging into Docker registry..."
     - docker login -u $DOCKER_HUB_USERNAME -p $DOCKER_HUB_TOKEN
@@ -335,7 +356,8 @@ build_docker:
 
     - echo "✅ Docker images published"
   rules:
-    - if: '$PROMOTE_MODEL == "yes" && $CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_success
 
 deploy_ray_serve:
   stage: deploy
@@ -354,11 +376,12 @@ deploy_ray_serve:
     name: production
     url: http://ray-serve.example.com
   rules:
-    - if: '$PROMOTE_MODEL == "yes" && $CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_success
 {% endif %}
 
 # =============================================================================
-# MANUAL OPERATIONS
+# MANUAL OPERATIONS (Only on main branch)
 # =============================================================================
 
 rollback_model:
@@ -370,8 +393,8 @@ rollback_model:
     - python scripts/rollback_model.py --experiment-name ${EXPERIMENT_NAME}
     - echo "✅ Rollback complete"
   when: manual
-  only:
-    - main
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
 
 sync_data_remote:
   stage: deploy
@@ -383,8 +406,8 @@ sync_data_remote:
     - dvc push -r ${DVC_REMOTE_NAME} || echo "⚠️ Configure AWS credentials"
     - echo "✅ Data sync complete"
   when: manual
-  only:
-    - main
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
 
 # =============================================================================
 # EMERGENCY: Force merge (use with caution)
@@ -399,6 +422,6 @@ force_promote:
     - python scripts/promote_model.py --experiment-name ${EXPERIMENT_NAME} --force
     - echo "✅ Force promotion complete"
   when: manual
-  only:
-    - main
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
   allow_failure: false
