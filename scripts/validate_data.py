@@ -57,7 +57,7 @@ def create_expectation_suite(
         print(f"✓ Created new suite: {suite_name}")
 
     # =========================================================================
-    # TABLE-LEVEL EXPECTATIONS
+    # TABLE-LEVEL EXPECTATIONS (schema)
     # =========================================================================
 
     # Dataset must not be empty
