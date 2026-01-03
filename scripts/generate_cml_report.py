@@ -1,8 +1,3 @@
-"""
-Generate CML-compatible markdown report from model comparison.
-Simple conversion from JSON to markdown for GitLab MR comments.
-"""
-
 import argparse
 import json
 from pathlib import Path
@@ -13,7 +8,6 @@ def generate_markdown_report(comparison: dict) -> str:
     Generate markdown report from comparison JSON.
     Designed for CML (Continuous Machine Learning) comments.
     """
-
     promote = comparison.get("promote_challenger", False)
     comp = comparison.get("comparison", {})
 
@@ -60,8 +54,14 @@ def generate_markdown_report(comparison: dict) -> str:
 
     # Challenger row
     if chall_score is not None:
-        change_emoji = "📈" if improvement > 0 else "📉" if improvement < 0 else "➡️"
-        change_str = f"`{improvement*100:+.2f}%` {change_emoji}"
+        # Handle None improvement (first model case)
+        if improvement is not None:
+            change_emoji = "📈" if improvement > 0 else "📉" if improvement < 0 else "➡️"
+            change_str = f"{improvement*100:+.2f}% {change_emoji}"
+        else:
+            change_emoji = "🆕"
+            change_str = f"_(new)_ {change_emoji}"
+
         lines.append(f"| **Challenger** | `{chall_score:.4f}` | {change_str} |")
 
     lines.append("")
