@@ -316,14 +316,15 @@ merge_decision:
 promote_model:
   stage: evaluate
   image: continuumio/miniconda3:latest
-  needs: ["evaluate_models", "merge_decision"]
+  needs: []
   <<: *conda_setup
   script:
     - echo "🏆 Promoting challenger to champion..."
     - python scripts/promote_model.py --experiment-name ${EXPERIMENT_NAME}
     - echo "✅ Model promoted successfully"
   rules:
-    - if: '$PROMOTE_MODEL == "yes" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_success
 
 # =============================================================================
 # STAGE 6: DEPLOY TO PRODUCTION (Only runs on main after merge)
