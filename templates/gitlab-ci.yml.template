@@ -343,16 +343,16 @@ build_docker:
     - echo "🐳 Building deployment image..."
     - |
       docker build \
-        -f Dockerfile.ray \
-        -t ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA} \
-        -t ${DOCKER_IMAGE_NAME}:latest \
+        -f deployment/Dockerfile.ray \
+        -t ${DOCKER_HUB_USERNAME}/${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA} \
+        -t ${DOCKER_HUB_USERNAME}/${DOCKER_IMAGE_NAME}:latest \
         --build-arg MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI} \
         --build-arg MODEL_NAME=${MODEL_NAME} \
         .
 
     - echo "📤 Pushing images to registry..."
-    - docker push ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}
-    - docker push ${DOCKER_IMAGE_NAME}:latest
+    - docker push ${DOCKER_HUB_USERNAME}/${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}
+    - docker push ${DOCKER_HUB_USERNAME}/${DOCKER_IMAGE_NAME}:latest
 
     - echo "✅ Docker images published"
   rules:
@@ -368,7 +368,7 @@ deploy_ray_serve:
     - echo "🚀 Deploying to Ray Serve..."
     - |
       python deployment/deploy_ray.py \
-        --image ${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA} \
+        --image ${DOCKER_HUB_USERNAME}/${DOCKER_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA} \
         --replicas 2 \
         --environment production
     - echo "✅ Deployment complete"
