@@ -1,18 +1,21 @@
 """
-Ray Serve deployment for online inference.
-Fully integrated with MLflow - loads champion model automatically.
+Ray Serve deployment with robust MLflow integration.
+Handles network issues, retries, and proper error handling for production.
 """
 
 import logging
 import os
+import time
 from typing import Dict, List
 
 import mlflow
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from ray import serve
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 # Configuration from environment
@@ -24,7 +27,11 @@ SERVE_MAX_REPLICAS = int(os.getenv("SERVE_MAX_REPLICAS", "4"))
 SERVE_TARGET_CONCURRENCY = int(os.getenv("SERVE_TARGET_CONCURRENCY", "8"))
 SERVE_NUM_CPUS_PER_REPLICA = float(os.getenv("SERVE_NUM_CPUS_PER_REPLICA", "1"))
 
-app = FastAPI()
+app = FastAPI(
+    title="MLflow Model Serving",
+    description="Ray Serve deployment with MLflow model registry integration",
+    version="1.0.0",
+)
 
 
 @serve.deployment(
@@ -37,89 +44,219 @@ app = FastAPI()
 )
 @serve.ingress(app)
 class MLFlowDeployment:
-    """Ray Serve deployment that loads models from MLflow."""
+    """Ray Serve deployment with robust model loading and error handling."""
 
     def __init__(self):
-        """Initialize and load model from MLflow."""
+        """Initialize with retry logic for model loading."""
         self.model = None
         self.model_uri = None
-        self._load_model()
+        self.model_metadata = {}
 
-    def _load_model(self):
-        """Load model from MLflow using champion alias."""
+        logger.info("=" * 70)
+        logger.info("INITIALIZING MLFLOW DEPLOYMENT")
+        logger.info("=" * 70)
+        logger.info(f"Model Name: {MODEL_NAME}")
+        logger.info(f"Model Version: {MODEL_VERSION}")
+        logger.info(f"MLflow URI: {MLFLOW_TRACKING_URI}")
+        logger.info("=" * 70)
+
+        self._load_model_with_retry(max_retries=10, initial_delay=5)
+
+    def _load_model_with_retry(self, max_retries: int = 10, initial_delay: int = 5):
+        """Load model with exponential backoff retry logic."""
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
-        try:
-            # Always try to load with alias first (champion, staging, production)
-            if MODEL_VERSION.lower() in ("champion", "staging", "production"):
-                self.model_uri = f"models:/{MODEL_NAME}@{MODEL_VERSION.lower()}"
-                logger.info(f"Loading model with alias: {self.model_uri}")
-            elif MODEL_VERSION.lower() == "latest":
-                self.model_uri = f"models:/{MODEL_NAME}/latest"
-                logger.info(f"Loading latest model version: {self.model_uri}")
-            else:
-                # Load specific version number
-                self.model_uri = f"models:/{MODEL_NAME}/{MODEL_VERSION}"
-                logger.info(f"Loading model version: {self.model_uri}")
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"\nAttempt {attempt + 1}/{max_retries}: Loading model...")
 
-            self.model = mlflow.pyfunc.load_model(self.model_uri)
-            logger.info(f"✅ Model loaded successfully: {self.model_uri}")
+                # Construct model URI based on version type
+                if MODEL_VERSION.lower() in ("champion", "staging", "production", "archived"):
+                    # Using alias
+                    self.model_uri = f"models:/{MODEL_NAME}@{MODEL_VERSION.lower()}"
+                    logger.info(f"Using alias: {MODEL_VERSION}")
+                elif MODEL_VERSION.lower() == "latest":
+                    # Using latest version
+                    self.model_uri = f"models:/{MODEL_NAME}/latest"
+                    logger.info("Using latest version")
+                elif MODEL_VERSION.isdigit():
+                    # Using specific version number
+                    self.model_uri = f"models:/{MODEL_NAME}/{MODEL_VERSION}"
+                    logger.info(f"Using version number: {MODEL_VERSION}")
+                else:
+                    raise ValueError(f"Invalid MODEL_VERSION: {MODEL_VERSION}")
 
-        except Exception as e:
-            logger.error(f"❌ Failed to load model: {e}")
-            logger.info("💡 Ensure model is registered with alias '@champion' in MLflow")
-            logger.info("   Or specify a version number via MODEL_VERSION env var")
-            self.model = None
+                logger.info(f"Model URI: {self.model_uri}")
+
+                # Load model from MLflow
+                self.model = mlflow.pyfunc.load_model(self.model_uri)
+
+                # Get model metadata
+                try:
+                    client = mlflow.tracking.MlflowClient()
+
+                    if "@" in self.model_uri:
+                        # Using alias - get version info
+                        model_name_part = self.model_uri.split("@")[0].replace("models:/", "")
+                        alias = MODEL_VERSION.lower()
+                        version_info = client.get_model_version_by_alias(model_name_part, alias)
+
+                        self.model_metadata = {
+                            "model_name": model_name_part,
+                            "version": version_info.version,
+                            "alias": alias,
+                            "stage": version_info.current_stage,
+                            "run_id": version_info.run_id,
+                        }
+                    elif "/latest" in self.model_uri:
+                        # Latest version
+                        versions = client.search_model_versions(f"name='{MODEL_NAME}'")
+                        if versions:
+                            latest = max(versions, key=lambda v: int(v.version))
+                            self.model_metadata = {
+                                "model_name": MODEL_NAME,
+                                "version": latest.version,
+                                "stage": latest.current_stage,
+                                "run_id": latest.run_id,
+                            }
+                    else:
+                        # Specific version
+                        self.model_metadata = {
+                            "model_name": MODEL_NAME,
+                            "version": MODEL_VERSION,
+                        }
+
+                except Exception as meta_error:
+                    logger.warning(f"Could not fetch model metadata: {meta_error}")
+
+                # Success!
+                logger.info("=" * 70)
+                logger.info("✅ MODEL LOADED SUCCESSFULLY")
+                logger.info("=" * 70)
+                logger.info(f"Model URI: {self.model_uri}")
+                if self.model_metadata:
+                    for key, value in self.model_metadata.items():
+                        logger.info(f"{key.capitalize()}: {value}")
+                logger.info("=" * 70)
+
+                return  # Exit retry loop
+
+            except Exception as e:
+                logger.error(f"❌ Attempt {attempt + 1} failed: {str(e)}")
+
+                if attempt < max_retries - 1:
+                    # Exponential backoff
+                    wait_time = initial_delay * (2**attempt)
+                    logger.info(f"Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    # All retries exhausted
+                    logger.error("=" * 70)
+                    logger.error("❌ ALL RETRY ATTEMPTS EXHAUSTED")
+                    logger.error("=" * 70)
+                    logger.error(f"MLFLOW_TRACKING_URI: {MLFLOW_TRACKING_URI}")
+                    logger.error(f"MODEL_NAME: {MODEL_NAME}")
+                    logger.error(f"MODEL_VERSION: {MODEL_VERSION}")
+                    logger.error("=" * 70)
+                    logger.error("Deployment will continue but predictions will fail.")
+                    logger.error("Check MLflow connectivity and model registration.")
+                    logger.error("=" * 70)
+                    # Don't raise - allow deployment to start in degraded state
 
     @app.post("/predict")
     async def predict(self, features: List[List[float]]) -> Dict:
         """
         Make predictions on input features.
 
-        Args:
-            features: List of feature vectors
+        Request body:
+        {
+            "features": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+        }
 
-        Returns:
-            Dictionary with predictions and metadata
+        Response:
+        {
+            "predictions": [0, 1],
+            "model_uri": "models:/my-model@champion",
+            "model_info": {...}
+        }
         """
         if not self.model:
-            return {
-                "error": "Model not loaded",
-                "message": "Model is not available. Check logs for details.",
-            }
+            raise HTTPException(
+                status_code=503,
+                detail="Model not loaded. Service is in degraded state. Check logs.",
+            )
 
         try:
             predictions = self.model.predict(features)
+
             return {
                 "predictions": predictions.tolist(),
                 "model_uri": self.model_uri,
-                "model_name": MODEL_NAME,
-                "model_version": MODEL_VERSION,
+                "model_metadata": self.model_metadata,
             }
+
         except Exception as e:
-            logger.error(f"Prediction error: {e}")
-            return {"error": str(e)}
+            logger.error(f"Prediction error: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
     @app.get("/health")
     def health(self) -> Dict:
-        """Health check endpoint."""
+        """
+        Health check endpoint.
+
+        Returns:
+        {
+            "status": "healthy" | "unhealthy",
+            "model_loaded": true | false,
+            "model_uri": "models:/my-model@champion",
+            ...
+        }
+        """
+        is_healthy = self.model is not None
+
         return {
-            "status": "healthy" if self.model else "unhealthy",
-            "model_loaded": self.model is not None,
+            "status": "healthy" if is_healthy else "unhealthy",
+            "model_loaded": is_healthy,
             "model_uri": self.model_uri,
-            "model_name": MODEL_NAME,
-            "model_version": MODEL_VERSION,
+            "model_metadata": self.model_metadata,
+            "mlflow_uri": MLFLOW_TRACKING_URI,
         }
 
     @app.get("/info")
     def info(self) -> Dict:
-        """Get deployment information."""
+        """
+        Deployment information endpoint.
+
+        Returns detailed configuration and model information.
+        """
         return {
+            "service": "MLflow Model Serving",
             "model_name": MODEL_NAME,
             "model_version": MODEL_VERSION,
             "model_uri": self.model_uri,
-            "mlflow_uri": MLFLOW_TRACKING_URI,
-            "replicas": {"min": SERVE_MIN_REPLICAS, "max": SERVE_MAX_REPLICAS},
+            "model_metadata": self.model_metadata,
+            "mlflow_tracking_uri": MLFLOW_TRACKING_URI,
+            "autoscaling": {
+                "min_replicas": SERVE_MIN_REPLICAS,
+                "max_replicas": SERVE_MAX_REPLICAS,
+                "target_concurrency": SERVE_TARGET_CONCURRENCY,
+            },
+            "resources": {
+                "cpus_per_replica": SERVE_NUM_CPUS_PER_REPLICA,
+            },
+        }
+
+    @app.get("/")
+    def root(self) -> Dict:
+        """Root endpoint with API documentation links."""
+        return {
+            "message": "MLflow Model Serving API",
+            "endpoints": {
+                "predict": "POST /predict",
+                "health": "GET /health",
+                "info": "GET /info",
+                "docs": "GET /docs",
+            },
         }
 
 
@@ -131,17 +268,27 @@ entrypoint = MLFlowDeployment.bind()
 # Usage Examples
 # =============================================================================
 """
-# Start Ray Serve
+# Local development:
 serve run src.deployment.ray_serve:entrypoint
 
-# Test prediction
+# With custom config:
+MODEL_NAME=my-model MODEL_VERSION=champion serve run src.deployment.ray_serve:entrypoint
+
+# Docker:
+docker run -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
+           -e MODEL_NAME=my-model \
+           -e MODEL_VERSION=champion \
+           -p 8000:8000 \
+           my-image:latest
+
+# Test prediction:
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{"features": [[1.0, 2.0, 3.0]]}'
 
-# Health check
+# Health check:
 curl http://localhost:8000/health
 
-# Get info
+# Info:
 curl http://localhost:8000/info
 """
