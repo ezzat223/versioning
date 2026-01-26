@@ -128,22 +128,34 @@ jobs:
           NAME="${{ github.event.inputs.project_name }}"
           API="https://api.github.com"
 
-          # Wait for the main branch to be available
-          for i in {1..50}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token ${GH_TOKEN}" \
+          # Wait for the main branch to be available (retry up to ~30s)
+          for i in $(seq 1 15); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: token ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
               "${API}/repos/${OWNER}/${NAME}/branches/main")
             if [ "$STATUS" -eq 200 ]; then
+              echo "Branch main found"
               break
             fi
+            echo "Branch main not found yet (status: $STATUS), retrying... ($i/15)"
             sleep 2
           done
 
-          RESP=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+          if [ "$STATUS" -ne 200 ]; then
+            echo "main branch not available after retries"
+            exit 1
+          fi
+
+          # Apply branch protection
+          RESP=$(curl -s -o /tmp/protect_resp_body -w "%{http_code}" -X PUT \
             -H "Authorization: token ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             "${API}/repos/${OWNER}/${NAME}/branches/main/protection" \
-            -d "{\"required_status_checks\":null,\"enforce_admins\":true,\"required_pull_request_reviews\":{\"required_approving_review_count\":1},\"restrictions\":null}")
+            -d '{"required_status_checks":null,"enforce_admins":true,"required_pull_request_reviews":{"required_approving_review_count":1},"restrictions":null}')
           if [ "$RESP" -lt 200 ] || [ "$RESP" -ge 300 ]; then
-            echo "Failed to protect main branch"
+            echo "Failed to protect main branch (status: $RESP)"
+            echo "Response body:"
+            cat /tmp/protect_resp_body || true
             exit 1
           fi
