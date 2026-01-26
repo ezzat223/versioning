@@ -127,6 +127,17 @@ jobs:
           OWNER="${OWNER_INPUT:-${{ github.repository_owner }}}"
           NAME="${{ github.event.inputs.project_name }}"
           API="https://api.github.com"
+
+          # Wait for the main branch to be available
+          for i in {1..50}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token ${GH_TOKEN}" \
+              "${API}/repos/${OWNER}/${NAME}/branches/main")
+            if [ "$STATUS" -eq 200 ]; then
+              break
+            fi
+            sleep 2
+          done
+
           RESP=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
             -H "Authorization: token ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
