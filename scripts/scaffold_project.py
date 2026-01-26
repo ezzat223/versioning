@@ -334,7 +334,7 @@ def scaffold_project(args):
     config_templates = [
         ("params.yaml.template", "params.yaml"),
         ("dvc.yaml.template", "dvc.yaml"),
-        ("gitlab-ci.yml.template", ".gitlab-ci.yml"),
+        ("github-actions.yml.template", ".github/workflows/ci.yml"),
         ("Makefile.template", "Makefile"),
     ]
 
@@ -347,65 +347,43 @@ def scaffold_project(args):
     # -------------------------------------------------------------------------
     readme_content = """# {{ project_name }}
 
-MLOps Project - Auto-generated
-
 ## Overview
-- **Task Type**: {{ task_type }}
-- **Data Type**: {{ data_type }}
-- **Deployment**: {{ deployment }}
+- Task Type: {{ task_type }}
+- Data Type: {{ data_type }}
+- Deployment: {{ deployment }}
 
 ## Quick Start
-
-### 1. Setup Environment
 ```bash
 ./setup.sh
-```
-
-### 2. Train Model
-```bash
 conda activate {{ project_name }}
 dvc repro
-```
-
-### 3. View Results
-```bash
 mlflow ui
-# Open http://localhost:5000
 ```
 
 ## Project Structure
 ```
-├── data/               # Data files (tracked by DVC)
-├── src/                # Source code
-│   ├── data_loaders/   # Data loading utilities
-│   └── deployment/     # Deployment code
-├── training/           # Training scripts
-├── scripts/            # MLOps automation scripts
-├── notebooks/          # Jupyter notebooks
-└── great_expectations/ # Data validation
+├── data/
+├── src/
+│   ├── data_loaders/
+│   └── deployment/
+├── training/
+├── scripts/
+├── notebooks/
+└── great_expectations/
 ```
 
 ## MLflow Tracking
-- Experiment: `{{ project_name }}-exp`
-- Model Registry: `{{ project_name }}-model`
-- Tracking URI: `http://localhost:5001`
+- Experiment: {{ project_name }}-exp
+- Model Registry: {{ project_name }}-model
+- Tracking URI: http://localhost:5001
 
 ## CI/CD
-This project uses GitLab CI/CD with:
-- Automatic training on commits to main
-- Champion vs Challenger comparison
-- Auto-promotion when challenger is better
+This project uses GitHub Actions. On pull requests to main it runs quality checks, data validation, training and evaluation, and on main it can promote the model.
 
 ## Customization
-1. Update `params.yaml` with your hyperparameters
-2. Modify `training/train.py` with your model
+1. Update params.yaml with your hyperparameters
+2. Modify training/train.py with your model
 3. Configure Great Expectations for data validation
-4. Update `.gitlab-ci.yml` for your deployment needs
-
-## Documentation
-- [MLflow Docs](https://mlflow.org/docs/latest/index.html)
-- [DVC Docs](https://dvc.org/doc)
-- [Great Expectations Docs](https://docs.greatexpectations.io/)
 """
 
     readme_template = env.from_string(readme_content)

@@ -1,0 +1,58 @@
+name: mlops-ci
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+jobs:
+  code_quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install black flake8 bandit safety
+      - run: black --check src/ scripts/ training/
+      - run: flake8 src/ scripts/ training/ --max-line-length=100 --ignore=E203,E402,E501,W503 || true
+      - run: bandit -r src/ scripts/ -ll || true
+      - run: safety scan || true
+  data_validation:
+    runs-on: ubuntu-latest
+    needs: code_quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python scripts/validate_data.py --data data/processed/dataset.csv --suite default_suite --columns "" --column-types ""
+  train_and_evaluate:
+    runs-on: ubuntu-latest
+    needs: data_validation
+    env:
+      PRIMARY_METRIC: {% if task_type == 'supervised' %}test_accuracy{% elif task_type == 'unsupervised' %}test_reconstruction_error{% else %}test_accuracy{% endif %}
+      EXPERIMENT_NAME: {{ project_name }}-exp
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: pip install dvc
+      - run: dvc repro || true
+      - run: python scripts/compare_models.py --experiment-name "$EXPERIMENT_NAME" --tracking-uri "$MLFLOW_TRACKING_URI" --metric "$PRIMARY_METRIC" --improvement-threshold 0.01 --output comparison.json
+      - run: python scripts/generate_cml_report.py --comparison comparison.json --output report.md --verbose
+      - name: decide
+        id: decide
+        run: |
+          python - <<'PY'
+          import json
+          d=json.load(open('comparison.json'))
+          print(f"promote={str(d.get('promote_challenger', False)).lower()}")
+          PY
+      - if: contains(steps.decide.outputs.promote, 'true')
+        run: python scripts/promote_model.py --experiment-name "$EXPERIMENT_NAME" --tracking-uri "$MLFLOW_TRACKING_URI" --output promotion_details.json

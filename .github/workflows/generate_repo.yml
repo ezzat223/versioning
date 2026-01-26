@@ -1,0 +1,138 @@
+name: Generate And Provision Project Repo
+on:
+  workflow_dispatch:
+    inputs:
+      project_name:
+        description: Project name
+        required: true
+        type: string
+      task_type:
+        description: Task type
+        required: true
+        type: choice
+        options:
+          - supervised
+          - unsupervised
+        default: supervised
+      data_type:
+        description: Data type
+        required: true
+        type: choice
+        options:
+          - tabular
+          - image
+          - database
+        default: tabular
+      deployment:
+        description: Deployment target
+        required: true
+        type: choice
+        options:
+          - all
+          - ray-serve
+          - ray-batch
+          - none
+        default: all
+      owner:
+        description: GitHub org or user to create repo under
+        required: false
+        type: string
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install jinja2
+      - name: Validate project name
+        run: |
+          set -e
+          PN="${{ github.event.inputs.project_name }}"
+          [ -n "$PN" ] || { echo "PROJECT_NAME is required"; exit 1; }
+          echo "$PN" | grep -Eq '^[A-Za-z0-9_.-]+$' || { echo "Invalid PROJECT_NAME"; exit 1; }
+      - name: Generate scaffold
+        run: |
+          mkdir -p generated_projects
+          python scripts/scaffold_project.py \
+            --name "${{ github.event.inputs.project_name }}" \
+            --task-type "${{ github.event.inputs.task_type }}" \
+            --data-type "${{ github.event.inputs.data_type }}" \
+            --deployment "${{ github.event.inputs.deployment }}" \
+            --output-dir generated_projects
+      - name: Create repository
+        env:
+          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+          OWNER_INPUT: ${{ github.event.inputs.owner }}
+        run: |
+          set -e
+          OWNER="${OWNER_INPUT:-${{ github.repository_owner }}}"
+          NAME="${{ github.event.inputs.project_name }}"
+          API="https://api.github.com"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${API}/repos/${OWNER}/${NAME}")
+          if [ "$STATUS" -eq 200 ]; then
+            echo "Repository ${OWNER}/${NAME} already exists"
+            exit 1
+          fi
+          CREATE_ORG_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -d "{\"name\":\"${NAME}\",\"private\":true}" \
+            "${API}/orgs/${OWNER}/repos")
+          if [ "$CREATE_ORG_STATUS" -ge 200 ] && [ "$CREATE_ORG_STATUS" -lt 300 ]; then
+            echo "Repository created in org ${OWNER}"
+          else
+            CREATE_USER_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: token ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -d "{\"name\":\"${NAME}\",\"private\":true}" \
+              "${API}/user/repos")
+            if [ "$CREATE_USER_STATUS" -ge 200 ] && [ "$CREATE_USER_STATUS" -lt 300 ]; then
+              echo "Repository created under user"
+            else
+              echo "Failed to create repository"
+              exit 1
+            fi
+          fi
+      - name: Push scaffold to repository
+        env:
+          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+          OWNER_INPUT: ${{ github.event.inputs.owner }}
+        run: |
+          set -e
+          OWNER="${OWNER_INPUT:-${{ github.repository_owner }}}"
+          NAME="${{ github.event.inputs.project_name }}"
+          cd "generated_projects/${NAME}"
+          git init
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git add .
+          git commit -m "Initial scaffold"
+          git branch -M main
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${OWNER}/${NAME}.git"
+          git push -u origin main
+      - name: Protect main branch
+        env:
+          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+          OWNER_INPUT: ${{ github.event.inputs.owner }}
+        run: |
+          set -e
+          OWNER="${OWNER_INPUT:-${{ github.repository_owner }}}"
+          NAME="${{ github.event.inputs.project_name }}"
+          API="https://api.github.com"
+          RESP=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${API}/repos/${OWNER}/${NAME}/branches/main/protection" \
+            -d "{\"required_status_checks\":null,\"enforce_admins\":true,\"required_pull_request_reviews\":{\"required_approving_review_count\":1},\"restrictions\":null}")
+          if [ "$RESP" -lt 200 ] || [ "$RESP" -ge 300 ]; then
+            echo "Failed to protect main branch"
+            exit 1
+          fi
