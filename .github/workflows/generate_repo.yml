@@ -37,6 +37,14 @@ on:
         description: GitHub org or user to create repo under
         required: false
         type: string
+      repo_private:
+        description: Create repository as private? (true = private, false = public)
+        required: false
+        type: choice
+        options:
+          - true
+          - false
+        default: true
 jobs:
   generate:
     runs-on: ubuntu-latest
@@ -48,13 +56,30 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install dependencies
-        run: pip install jinja2
+        run: |
+          pip install jinja2
+          sudo apt-get update -y
+          sudo apt-get install -y jq
       - name: Validate project name
         run: |
           set -e
           PN="${{ github.event.inputs.project_name }}"
           [ -n "$PN" ] || { echo "PROJECT_NAME is required"; exit 1; }
           echo "$PN" | grep -Eq '^[A-Za-z0-9_.-]+$' || { echo "Invalid PROJECT_NAME"; exit 1; }
+      - name: Set repo private flag
+        id: set_repo_private
+        run: |
+          # Normalize workflow input to 'true' or 'false'
+          INPUT="${{ github.event.inputs.repo_private }}"
+          if [ -z "$INPUT" ]; then
+            INPUT="true"
+          fi
+          case "$INPUT" in
+            true|True|TRUE|1|yes|Yes|YES) RP=true ;;
+            false|False|FALSE|0|no|No|NO) RP=false ;;
+            *) RP=true ;; # default to true to preserve previous behavior
+          esac
+          echo "repo_private=$RP" >> $GITHUB_OUTPUT
       - name: Generate scaffold
         run: |
           mkdir -p generated_projects
@@ -73,6 +98,8 @@ jobs:
           OWNER="${OWNER_INPUT:-${{ github.repository_owner }}}"
           NAME="${{ github.event.inputs.project_name }}"
           API="https://api.github.com"
+          REPO_PRIVATE="${{ steps.set_repo_private.outputs.repo_private }}"
+          # Check existence
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: token ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
@@ -81,10 +108,11 @@ jobs:
             echo "Repository ${OWNER}/${NAME} already exists"
             exit 1
           fi
+          # Try create in org
           CREATE_ORG_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: token ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            -d "{\"name\":\"${NAME}\",\"private\":true}" \
+            -d "{\"name\":\"${NAME}\",\"private\":${REPO_PRIVATE}}" \
             "${API}/orgs/${OWNER}/repos")
           if [ "$CREATE_ORG_STATUS" -ge 200 ] && [ "$CREATE_ORG_STATUS" -lt 300 ]; then
             echo "Repository created in org ${OWNER}"
@@ -92,12 +120,15 @@ jobs:
             CREATE_USER_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               -H "Authorization: token ${GH_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
-              -d "{\"name\":\"${NAME}\",\"private\":true}" \
+              -d "{\"name\":\"${NAME}\",\"private\":${REPO_PRIVATE}}" \
               "${API}/user/repos")
             if [ "$CREATE_USER_STATUS" -ge 200 ] && [ "$CREATE_USER_STATUS" -lt 300 ]; then
               echo "Repository created under user"
             else
+              # Dump response for debugging
               echo "Failed to create repository"
+              echo "Org create status: $CREATE_ORG_STATUS"
+              echo "User create status: $CREATE_USER_STATUS"
               exit 1
             fi
           fi
@@ -118,7 +149,35 @@ jobs:
           git branch -M main
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${OWNER}/${NAME}.git"
           git push -u origin main
+      - name: Get repository information
+        id: repo_info
+        env:
+          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+          OWNER_INPUT: ${{ github.event.inputs.owner }}
+        run: |
+          set -e
+          OWNER="${OWNER_INPUT:-${{ github.repository_owner }}}"
+          NAME="${{ github.event.inputs.project_name }}"
+          API="https://api.github.com"
+          RESP_FILE=$(mktemp)
+          STATUS=$(curl -s -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${API}/repos/${OWNER}/${NAME}" -o "$RESP_FILE" -w "%{http_code}")
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          # parse .private field; fallback to the workflow input if parsing fails
+          IS_PRIVATE=$(jq -r '.private // empty' "$RESP_FILE" 2>/dev/null || echo "")
+          if [ -z "$IS_PRIVATE" ]; then
+            IS_PRIVATE="${{ steps.set_repo_private.outputs.repo_private }}"
+          fi
+          # normalize to 'true' or 'false'
+          if [ "$IS_PRIVATE" = "true" ] || [ "$IS_PRIVATE" = "True" ]; then
+            IS_PRIVATE=true
+          else
+            IS_PRIVATE=false
+          fi
+          echo "is_private=$IS_PRIVATE" >> $GITHUB_OUTPUT
       - name: Protect main branch
+        if: steps.repo_info.outputs.is_private == 'false'
         env:
           GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
           OWNER_INPUT: ${{ github.event.inputs.owner }}
