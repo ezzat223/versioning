@@ -11,7 +11,7 @@ A production-ready **MLOps Project Generator** that scaffolds tailored machine l
 - **Production-Ready Components**:
   - **Git + DVC**: Pre-configured for code and data versioning.
   - **MLflow**: Integrated experimentation tracking.
-  - **CI/CD**: Auto-generated GitLab CI/CD pipelines that run only on Pull Requests/Merges.
+  - **CI/CD**: Auto-generated GitHub Actions pipelines for PRs and main.
   - **Code Quality**: Pre-commit hooks (Black, Flake8, Mypy, Bandit).
 - **Automated Setup**: Includes a unified `setup.sh` script to bootstrap the environment in seconds.
 
@@ -36,11 +36,11 @@ graph LR
 ├── scripts/
 │   └── scaffold_project.py   # The core generator logic (Jinja2-based)
 ├── templates/                # Jinja2 templates for the generated project
-│   ├── dvc.yaml.template     # DVC pipeline template
-│   ├── params.yaml.template  # Parameter configuration template
-│   ├── gitlab-ci.yml.template# CI/CD pipeline template
-│   ├── train_supervised.py   # Training script templates
-│   └── setup.sh              # Unified setup script
+│   ├── dvc.yaml.template
+│   ├── params.yaml.template
+│   ├── github-actions.yml.template
+│   ├── train_supervised.py
+│   └── setup.sh
 ├── src/                      # Source code components (Data Loaders, Deployment)
 │   ├── data_loaders/         # Modular data loaders to be copied
 │   └── deployment/           # Deployment logic to be copied
@@ -100,20 +100,35 @@ graph LR
     ```
     _This will create the conda environment, install dependencies, and configure Git/DVC hooks._
 
-### Option 2: CI/CD Generation (GitLab)
+### Option 2: CI/CD Generation (GitHub)
 
-This repository includes a **Project Generator Pipeline** that can be triggered manually from GitLab.
+This repository includes a **GitHub Actions workflow** to generate and provision new project repositories automatically.
 
-- Go to `Build > Pipelines` and click `Run pipeline`.
-- The UI presents dropdowns and inputs for:
-  - `PROJECT_NAME` (text)
-  - `TASK_TYPE` (dropdown: `supervised`, `unsupervised`)
-  - `DATA_TYPE` (dropdown: `tabular`, `image`, `database`)
-  - `DEPLOYMENT` (dropdown: `all`, `ray-serve`, `ray-batch`, `none`)
-- Run the pipeline.
-- Open the job and download **Artifacts**. The archive contains:
-  - `generated_projects/<PROJECT_NAME>/` (full generated repo)
-  - `generated_projects/<PROJECT_NAME>.tar.gz` (portable bundle)
+1. Configure repository secret:
+   - Name: `GH_ADMIN_TOKEN`
+   - Scopes: `repo`, `workflow`, and `admin:org` if creating under an org
+
+2. Trigger the workflow:
+   - Navigate to Actions → `Generate And Provision Project Repo` → `Run workflow`
+   - Provide inputs:
+     - `project_name` (string; letters, numbers, `.`, `_`, `-`)
+     - `task_type` (`supervised` or `unsupervised`)
+     - `data_type` (`tabular`, `image`, `database`)
+     - `deployment` (`all`, `ray-serve`, `ray-batch`, `none`)
+     - `owner` (optional; organization or username; defaults to meta repo owner)
+     - `repo_private` (`true` or `false`; privacy of the new repo)
+
+3. What the workflow does:
+   - Generates the scaffold under `generated_projects/<project_name>/`
+   - Creates a GitHub repository under `owner` if it does not exist
+   - Pushes the scaffold to the repo’s `main` branch
+   - Protects `main` with enforced admins and one required approving review
+
+4. Start working:
+   - `git clone https://github.com/<owner>/<project_name>.git`
+   - `cd <project_name>`
+   - `./setup.sh && conda activate <project_name>`
+   - `dvc repro`
 
 ---
 
@@ -123,11 +138,5 @@ To modify the structure of _future_ generated projects, edit the files in the `t
 
 - **`templates/dvc.yaml.template`**: Edit the DVC pipeline stages.
 - **`templates/params.yaml.template`**: Add new hyperparameters or configuration sections.
-- **`templates/gitlab-ci.yml.template`**: Update the CI/CD pipeline definition (e.g., change runner tags or docker images).
+- **`templates/github-actions.yml.template`**: Update the generated project’s CI/CD pipeline.
 - **`src/`**: Add new data loaders or utility functions that should be copied to every new project.
-
----
-
-## 📝 License
-
-[Insert License Here]

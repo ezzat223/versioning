@@ -37,49 +37,37 @@ on:
         description: GitHub org or user to create repo under
         required: false
         type: string
-      repo_private:
-        description: Create repository as private? (true = private, false = public)
+      visibility:
+        description: Visibility for the generated repository
         required: false
         type: choice
         options:
-          - true
-          - false
-        default: true
+          - private
+          - public
+        default: private
+
 jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - name: Install dependencies
-        run: |
-          pip install jinja2
-          sudo apt-get update -y
-          sudo apt-get install -y jq
+        run: pip install jinja2
+
       - name: Validate project name
         run: |
           set -e
           PN="${{ github.event.inputs.project_name }}"
           [ -n "$PN" ] || { echo "PROJECT_NAME is required"; exit 1; }
           echo "$PN" | grep -Eq '^[A-Za-z0-9_.-]+$' || { echo "Invalid PROJECT_NAME"; exit 1; }
-      - name: Set repo private flag
-        id: set_repo_private
-        run: |
-          # Normalize workflow input to 'true' or 'false'
-          INPUT="${{ github.event.inputs.repo_private }}"
-          if [ -z "$INPUT" ]; then
-            INPUT="true"
-          fi
-          case "$INPUT" in
-            true|True|TRUE|1|yes|Yes|YES) RP=true ;;
-            false|False|FALSE|0|no|No|NO) RP=false ;;
-            *) RP=true ;; # default to true to preserve previous behavior
-          esac
-          echo "repo_private=$RP" >> $GITHUB_OUTPUT
+
       - name: Generate scaffold
         run: |
           mkdir -p generated_projects
@@ -89,17 +77,27 @@ jobs:
             --data-type "${{ github.event.inputs.data_type }}" \
             --deployment "${{ github.event.inputs.deployment }}" \
             --output-dir generated_projects
+
       - name: Create repository
         env:
           GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
           OWNER_INPUT: ${{ github.event.inputs.owner }}
+          VIS_INPUT: ${{ github.event.inputs.visibility }}
         run: |
           set -e
           OWNER="${OWNER_INPUT:-${{ github.repository_owner }}}"
           NAME="${{ github.event.inputs.project_name }}"
+          VIS="${VIS_INPUT:-private}"
           API="https://api.github.com"
-          REPO_PRIVATE="${{ steps.set_repo_private.outputs.repo_private }}"
-          # Check existence
+
+          # Determine private boolean for payload
+          if [ "$VIS" = "public" ]; then
+            PRIVATE=false
+          else
+            PRIVATE=true
+          fi
+
+          # If repo already exists, fail early
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: token ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
@@ -108,30 +106,30 @@ jobs:
             echo "Repository ${OWNER}/${NAME} already exists"
             exit 1
           fi
-          # Try create in org
+
+          # Try to create under an org first
           CREATE_ORG_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: token ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            -d "{\"name\":\"${NAME}\",\"private\":${REPO_PRIVATE}}" \
+            -d "{\"name\":\"${NAME}\",\"private\":${PRIVATE}}" \
             "${API}/orgs/${OWNER}/repos")
           if [ "$CREATE_ORG_STATUS" -ge 200 ] && [ "$CREATE_ORG_STATUS" -lt 300 ]; then
             echo "Repository created in org ${OWNER}"
           else
+            # Fallback to creating under the authenticated user
             CREATE_USER_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               -H "Authorization: token ${GH_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
-              -d "{\"name\":\"${NAME}\",\"private\":${REPO_PRIVATE}}" \
+              -d "{\"name\":\"${NAME}\",\"private\":${PRIVATE}}" \
               "${API}/user/repos")
             if [ "$CREATE_USER_STATUS" -ge 200 ] && [ "$CREATE_USER_STATUS" -lt 300 ]; then
               echo "Repository created under user"
             else
-              # Dump response for debugging
-              echo "Failed to create repository"
-              echo "Org create status: $CREATE_ORG_STATUS"
-              echo "User create status: $CREATE_USER_STATUS"
+              echo "Failed to create repository (org status: ${CREATE_ORG_STATUS}, user status: ${CREATE_USER_STATUS})"
               exit 1
             fi
           fi
+
       - name: Push scaffold to repository
         env:
           GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
@@ -149,35 +147,8 @@ jobs:
           git branch -M main
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${OWNER}/${NAME}.git"
           git push -u origin main
-      - name: Get repository information
-        id: repo_info
-        env:
-          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
-          OWNER_INPUT: ${{ github.event.inputs.owner }}
-        run: |
-          set -e
-          OWNER="${OWNER_INPUT:-${{ github.repository_owner }}}"
-          NAME="${{ github.event.inputs.project_name }}"
-          API="https://api.github.com"
-          RESP_FILE=$(mktemp)
-          STATUS=$(curl -s -H "Authorization: token ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${API}/repos/${OWNER}/${NAME}" -o "$RESP_FILE" -w "%{http_code}")
-          echo "status=$STATUS" >> $GITHUB_OUTPUT
-          # parse .private field; fallback to the workflow input if parsing fails
-          IS_PRIVATE=$(jq -r '.private // empty' "$RESP_FILE" 2>/dev/null || echo "")
-          if [ -z "$IS_PRIVATE" ]; then
-            IS_PRIVATE="${{ steps.set_repo_private.outputs.repo_private }}"
-          fi
-          # normalize to 'true' or 'false'
-          if [ "$IS_PRIVATE" = "true" ] || [ "$IS_PRIVATE" = "True" ]; then
-            IS_PRIVATE=true
-          else
-            IS_PRIVATE=false
-          fi
-          echo "is_private=$IS_PRIVATE" >> $GITHUB_OUTPUT
+
       - name: Protect main branch
-        if: steps.repo_info.outputs.is_private == 'false'
         env:
           GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
           OWNER_INPUT: ${{ github.event.inputs.owner }}
@@ -206,15 +177,41 @@ jobs:
             exit 1
           fi
 
-          # Apply branch protection
+          # Get repository metadata so we can decide how to handle protection errors
+          REPO_INFO=$(curl -s -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "${API}/repos/${OWNER}/${NAME}")
+          IS_PRIVATE=$(echo "$REPO_INFO" | grep -Eo '"private":[[:space:]]*(true|false)' | head -1 | grep -Eo '(true|false)' || true)
+          echo "Repository private: ${IS_PRIVATE}"
+
+          # Apply branch protection (handle plan limitations gracefully)
           RESP=$(curl -s -o /tmp/protect_resp_body -w "%{http_code}" -X PUT \
             -H "Authorization: token ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             "${API}/repos/${OWNER}/${NAME}/branches/main/protection" \
             -d '{"required_status_checks":null,"enforce_admins":true,"required_pull_request_reviews":{"required_approving_review_count":1},"restrictions":null}')
-          if [ "$RESP" -lt 200 ] || [ "$RESP" -ge 300 ]; then
-            echo "Failed to protect main branch (status: $RESP)"
+
+          if [ "$RESP" -ge 200 ] && [ "$RESP" -lt 300 ]; then
+            echo "Branch protection applied successfully."
+            rm -f /tmp/protect_resp_body || true
+          else
+            echo "Branch protection API returned status: $RESP"
             echo "Response body:"
             cat /tmp/protect_resp_body || true
-            exit 1
+
+            # If the failure is due to plan limitations for private repos, log and continue
+            if [ "$RESP" -eq 403 ]; then
+              BODY=$(cat /tmp/protect_resp_body 2>/dev/null || true)
+              if echo "$BODY" | grep -qi -e "Upgrade to GitHub Pro" -e "make this repository public" -e "This endpoint can only be accessed by organization owners"; then
+                echo "Branch protection is not available for this account/plan or visibility. Skipping protection step."
+                rm -f /tmp/protect_resp_body || true
+              else
+                echo "Received 403 for branch protection but reason is not a known plan/visibility limitation. Failing the job."
+                rm -f /tmp/protect_resp_body || true
+                exit 1
+              fi
+            else
+              # For other non-2xx statuses, fail
+              echo "Failed to protect main branch (status: $RESP)"
+              rm -f /tmp/protect_resp_body || true
+              exit 1
+            fi
           fi
