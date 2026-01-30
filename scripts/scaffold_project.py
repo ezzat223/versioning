@@ -334,7 +334,7 @@ def scaffold_project(args):
     config_templates = [
         ("params.yaml.template", "params.yaml"),
         ("dvc.yaml.template", "dvc.yaml"),
-        ("github-actions.yml.template", ".github/workflows/ci.yml"),
+        ("github-actions.yml.template", ".github/workflows/mlops-ci.yml"),
         ("Makefile.template", "Makefile"),
     ]
 
