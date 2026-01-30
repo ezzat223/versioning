@@ -1,58 +1,309 @@
-name: mlops-ci
+name: MLOps CI/CD Pipeline
+
 on:
   pull_request:
-    branches:
-      - main
+    branches: [main]
   push:
-    branches:
-      - main
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+  MODEL_NAME: "{{ project_name }}-model"
+  EXPERIMENT_NAME: "{{ project_name }}-exp"
+  DATA_PATH: "data/processed/dataset.csv"
+  TARGET_COLUMN: "target"
+  {% if task_type == 'supervised' %}
+  PRIMARY_METRIC: "test_r2"
+  {% elif task_type == 'unsupervised' %}
+  PRIMARY_METRIC: "test_reconstruction_error"
+  {% else %}
+  PRIMARY_METRIC: "test_accuracy"
+  {% endif %}
+
 jobs:
+  # =============================================================================
+  # Stage 1: Code Quality
+  # =============================================================================
   code_quality:
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - run: pip install black flake8 bandit safety
-      - run: black --check src/ scripts/ training/
-      - run: flake8 src/ scripts/ training/ --max-line-length=100 --ignore=E203,E402,E501,W503 || true
-      - run: bandit -r src/ scripts/ -ll || true
-      - run: safety scan || true
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install linting tools
+        run: pip install black flake8 bandit safety
+      
+      - name: Check formatting
+        run: |
+          black --check src/ scripts/ training/ || \
+          (echo "❌ Run: black src/ scripts/ training/" && exit 1)
+      
+      - name: Lint code
+        run: |
+          flake8 src/ scripts/ training/ \
+            --max-line-length=100 \
+            --ignore=E203,E402,E501,W503 || true
+      
+      - name: Security scan
+        run: |
+          bandit -r src/ scripts/ -ll || true
+          safety scan || true
+
+  # =============================================================================
+  # Stage 2: Data Validation
+  # =============================================================================
   data_validation:
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
     needs: code_quality
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - run: pip install -r requirements.txt
-      - run: python scripts/validate_data.py --data data/processed/dataset.csv --suite default_suite --columns "" --column-types ""
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install dvc dvc-s3 great-expectations pandas
+      
+      - name: Configure DVC
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          DVC_S3_BUCKET: ${{ secrets.DVC_S3_BUCKET }}
+        run: |
+          if [ -n "$DVC_S3_BUCKET" ]; then
+            dvc remote add -f aws-store s3://$DVC_S3_BUCKET
+            dvc remote modify aws-store access_key_id $AWS_ACCESS_KEY_ID
+            dvc remote modify aws-store secret_access_key $AWS_SECRET_ACCESS_KEY
+            dvc remote modify aws-store endpointurl $AWS_ENDPOINT_URL
+            dvc remote modify aws-store region $AWS_DEFAULT_REGION
+            dvc remote default aws-store
+          fi
+      
+      - name: Pull data
+        run: |
+          dvc pull || echo "⚠️ DVC pull failed"
+      
+      - name: Validate data
+        run: |
+          python scripts/validate_data.py --data ${{ env.DATA_PATH }}
+
+  # =============================================================================
+  # Stage 3: Train & Evaluate
+  # =============================================================================
   train_and_evaluate:
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
     needs: data_validation
-    env:
-      PRIMARY_METRIC: {% if task_type == 'supervised' %}test_accuracy{% elif task_type == 'unsupervised' %}test_reconstruction_error{% else %}test_accuracy{% endif %}
-      EXPERIMENT_NAME: {{ project_name }}-exp
-      MLFLOW_TRACKING_URI: http://mlflow:5000
+    outputs:
+      promote: ${{ steps.decide.outputs.promote }}
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - run: pip install -r requirements.txt
-      - run: pip install dvc
-      - run: dvc repro || true
-      - run: python scripts/compare_models.py --experiment-name "$EXPERIMENT_NAME" --tracking-uri "$MLFLOW_TRACKING_URI" --metric "$PRIMARY_METRIC" --improvement-threshold 0.01 --output comparison.json
-      - run: python scripts/generate_cml_report.py --comparison comparison.json --output report.md --verbose
-      - name: decide
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install dvc dvc-s3
+      
+      - name: Configure DVC
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          DVC_S3_BUCKET: ${{ secrets.DVC_S3_BUCKET }}
+        run: |
+          if [ -n "$DVC_S3_BUCKET" ]; then
+            dvc remote add -f aws-store s3://$DVC_S3_BUCKET
+            dvc remote modify aws-store access_key_id $AWS_ACCESS_KEY_ID
+            dvc remote modify aws-store secret_access_key $AWS_SECRET_ACCESS_KEY
+            dvc remote modify aws-store endpointurl $AWS_ENDPOINT_URL
+            dvc remote modify aws-store region $AWS_DEFAULT_REGION
+            dvc remote default aws-store
+          fi
+      
+      - name: Pull data
+        run: dvc pull
+      
+      - name: Train model
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
+          MLFLOW_S3_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
+        run: |
+          dvc repro
+      
+      - name: Tag challenger
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+        run: |
+          python scripts/tag_challenger.py \
+            --experiment-name ${{ env.EXPERIMENT_NAME }} \
+            --tracking-uri ${{ secrets.MLFLOW_TRACKING_URI }}
+      
+      - name: Compare models
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+        run: |
+          python scripts/compare_models.py \
+            --experiment-name ${{ env.EXPERIMENT_NAME }} \
+            --tracking-uri ${{ secrets.MLFLOW_TRACKING_URI }} \
+            --metric ${{ env.PRIMARY_METRIC }} \
+            --improvement-threshold 0.01 \
+            --output comparison.json
+      
+      - name: Generate CML report
+        run: |
+          python scripts/generate_cml_report.py \
+            --comparison comparison.json \
+            --output report.md \
+            --verbose
+      
+      - name: Post PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+      
+      - name: Decide promotion
         id: decide
         run: |
-          python - <<'PY'
+          PROMOTE=$(python -c "
           import json
-          d=json.load(open('comparison.json'))
-          print(f"promote={str(d.get('promote_challenger', False)).lower()}")
-          PY
-      - if: contains(steps.decide.outputs.promote, 'true')
-        run: python scripts/promote_model.py --experiment-name "$EXPERIMENT_NAME" --tracking-uri "$MLFLOW_TRACKING_URI" --output promotion_details.json
+          with open('comparison.json') as f:
+              data = json.load(f)
+          print('true' if data.get('promote_challenger', False) else 'false')
+          ")
+          echo "promote=$PROMOTE" >> $GITHUB_OUTPUT
+          
+          if [ "$PROMOTE" = "true" ]; then
+            echo "✅ Will promote challenger"
+          else
+            echo "⚠️ Keeping champion"
+            exit 1  # Fail if model is not better
+          fi
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-comparison
+          path: |
+            comparison.json
+            report.md
+            metrics.json
+            dvc.lock
+
+  # =============================================================================
+  # Stage 4: Promote (on main after merge)
+  # =============================================================================
+  promote:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install mlflow boto3 python-dotenv
+      
+      - name: Promote model
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
+        run: |
+          python scripts/promote_model.py \
+            --experiment-name ${{ env.EXPERIMENT_NAME }} \
+            --tracking-uri ${{ secrets.MLFLOW_TRACKING_URI }} \
+            --output promotion_details.json
+      
+      - name: Upload promotion details
+        uses: actions/upload-artifact@v4
+        with:
+          name: promotion-details
+          path: promotion_details.json
+
+  # =============================================================================
+  # Stage 5: Deploy (on main after promotion)
+  # =============================================================================
+  {% if deployment in ['ray-serve', 'all'] %}
+  build_docker:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: promote
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      
+      - name: Build and test
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+        run: |
+          docker build \
+            -f Dockerfile.ray \
+            -t ${{ secrets.DOCKER_HUB_USERNAME }}/{{ project_name }}-service:${{ github.sha }} \
+            -t ${{ secrets.DOCKER_HUB_USERNAME }}/{{ project_name }}-service:latest \
+            --build-arg MODEL_NAME=${{ env.MODEL_NAME }} \
+            --build-arg MODEL_VERSION=champion \
+            .
+          
+          # Test image
+          docker run -d --name test-serve \
+            -e MLFLOW_TRACKING_URI=${{ secrets.MLFLOW_TRACKING_URI }} \
+            -e MODEL_NAME=${{ env.MODEL_NAME }} \
+            -e MODEL_VERSION=champion \
+            -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
+            -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
+            -e AWS_ENDPOINT_URL=${{ secrets.AWS_ENDPOINT_URL }} \
+            ${{ secrets.DOCKER_HUB_USERNAME }}/{{ project_name }}-service:${{ github.sha }}
+          
+          sleep 45
+          docker logs test-serve
+          docker exec test-serve curl -f http://localhost:8000/health || exit 1
+          docker stop test-serve
+          docker rm test-serve
+      
+      - name: Push to registry
+        run: |
+          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/{{ project_name }}-service:${{ github.sha }}
+          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/{{ project_name }}-service:latest
+  {% endif %}
