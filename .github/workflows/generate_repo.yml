@@ -143,7 +143,7 @@ jobs:
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
           git add .
-          git commit -m "Initial scaffold"
+          git commit -m "chore: initial scaffold from mlops-project-template" 
           git branch -M main
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${OWNER}/${NAME}.git"
           git push -u origin main
@@ -187,8 +187,21 @@ jobs:
             -H "Authorization: token ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             "${API}/repos/${OWNER}/${NAME}/branches/main/protection" \
-            -d '{"required_status_checks":null,"enforce_admins":true,"required_pull_request_reviews":{"required_approving_review_count":1},"restrictions":null}')
-
+            -d '{
+              "required_status_checks": {
+                "strict": true,
+                "contexts": ["code_quality", "data_validation", "train_and_evaluate"]
+              },
+              "enforce_admins": true,
+              "required_pull_request_reviews": {
+                "required_approving_review_count": 0,
+                "dismiss_stale_reviews": true
+              },
+              "restrictions": null,
+              "allow_force_pushes": false,
+              "allow_deletions": false
+            }')
+          
           if [ "$RESP" -ge 200 ] && [ "$RESP" -lt 300 ]; then
             echo "Branch protection applied successfully."
             rm -f /tmp/protect_resp_body || true
@@ -215,3 +228,33 @@ jobs:
               exit 1
             fi
           fi
+
+      - name: Setup repository secrets
+        env:
+          GH_TOKEN: ${{ secrets.GH_ADMIN_TOKEN }}
+          OWNER_INPUT: ${{ github.event.inputs.owner }}
+        run: |
+          set -e
+          OWNER="${OWNER_INPUT:-${{ github.repository_owner }}}"
+          NAME="${{ github.event.inputs.project_name }}"
+          API="https://api.github.com"
+          
+          echo "📝 Repository created successfully!"
+          echo ""
+          echo "Next steps:"
+          echo "1. Go to https://github.com/${OWNER}/${NAME}/settings/secrets/actions"
+          echo "2. Add the following secrets:"
+          echo "   - MLFLOW_TRACKING_URI"
+          echo "   - AWS_ACCESS_KEY_ID"
+          echo "   - AWS_SECRET_ACCESS_KEY"
+          echo "   - AWS_ENDPOINT_URL"
+          echo "   - AWS_DEFAULT_REGION"
+          echo "   - DVC_S3_BUCKET"
+          echo "   - DOCKER_HUB_USERNAME (optional)"
+          echo "   - DOCKER_HUB_TOKEN (optional)"
+          echo ""
+          echo "3. Clone the repository:"
+          echo "   git clone https://github.com/${OWNER}/${NAME}.git"
+          echo ""
+          echo "4. Follow the setup instructions in the README"
+          
