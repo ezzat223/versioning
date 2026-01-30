@@ -8,17 +8,17 @@ on:
 
 env:
   PYTHON_VERSION: "3.11"
-  MODEL_NAME: "{{ project_name }}-model"
-  EXPERIMENT_NAME: "{{ project_name }}-exp"
+  MODEL_NAME: "[[ project_name ]]-model"
+  EXPERIMENT_NAME: "[[ project_name ]]-exp"
   DATA_PATH: "data/processed/dataset.csv"
   TARGET_COLUMN: "target"
-  {% if task_type == 'supervised' %}
+  [% if task_type == 'supervised' %]
   PRIMARY_METRIC: "test_r2"
-  {% elif task_type == 'unsupervised' %}
+  [% elif task_type == 'unsupervised' %]
   PRIMARY_METRIC: "test_reconstruction_error"
-  {% else %}
+  [% else %]
   PRIMARY_METRIC: "test_accuracy"
-  {% endif %}
+  [% endif %]
 
 jobs:
   # =============================================================================
@@ -79,7 +79,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
-          DVC_S3_BUCKET: {{ project_name }}
+          DVC_S3_BUCKET: [[ project_name ]]
         run: |
           if [ -n "$DVC_S3_BUCKET" ]; then
             dvc remote add -f aws-store s3://$DVC_S3_BUCKET
@@ -257,7 +257,7 @@ jobs:
   # =============================================================================
   # Stage 5: Deploy (on main after promotion)
   # =============================================================================
-  {% if deployment in ['ray-serve', 'all'] %}
+  [% if deployment in ['ray-serve', 'all'] %]
   build_docker:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -280,8 +280,8 @@ jobs:
         run: |
           docker build \
             -f Dockerfile.ray \
-            -t ${{ secrets.DOCKER_HUB_USERNAME }}/{{ project_name }}-service:${{ github.sha }} \
-            -t ${{ secrets.DOCKER_HUB_USERNAME }}/{{ project_name }}-service:latest \
+            -t ${{ secrets.DOCKER_HUB_USERNAME }}/[[ project_name ]]-service:${{ github.sha }} \
+            -t ${{ secrets.DOCKER_HUB_USERNAME }}/[[ project_name ]]-service:latest \
             --build-arg MODEL_NAME=${{ env.MODEL_NAME }} \
             --build-arg MODEL_VERSION=champion \
             .
@@ -294,7 +294,7 @@ jobs:
             -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
             -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
             -e AWS_ENDPOINT_URL=${{ secrets.AWS_ENDPOINT_URL }} \
-            ${{ secrets.DOCKER_HUB_USERNAME }}/{{ project_name }}-service:${{ github.sha }}
+            ${{ secrets.DOCKER_HUB_USERNAME }}/[[ project_name ]]-service:${{ github.sha }}
           
           sleep 45
           docker logs test-serve
@@ -304,6 +304,6 @@ jobs:
       
       - name: Push to registry
         run: |
-          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/{{ project_name }}-service:${{ github.sha }}
-          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/{{ project_name }}-service:latest
-  {% endif %}
+          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/[[ project_name ]]-service:${{ github.sha }}
+          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/[[ project_name ]]-service:latest
+  [% endif %]

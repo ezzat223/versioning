@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
 """
-MLOps Project Scaffolder - IMPROVED
+MLOps Project Scaffolder
 Generates production-ready MLOps projects with proper error handling.
 """
 
@@ -174,7 +173,7 @@ def render_template_safe(
         # Ensure parent directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(output_path, "w") as f:
+        with open(output_path, "w", encoding="utf-8") as f:
             f.write(content)
 
         logger.info(f"✓ Rendered {template_name}")
@@ -216,6 +215,13 @@ def scaffold_project(args):
         sys.exit(1)
 
     env = Environment(loader=FileSystemLoader(templates_dir))
+    gh_env = Environment(
+        loader=FileSystemLoader(templates_dir),
+        variable_start_string="[[",
+        variable_end_string="]]",
+        block_start_string="[%",
+        block_end_string="%]",
+    )
 
     # Context for templates
     context = {
@@ -339,7 +345,8 @@ def scaffold_project(args):
     ]
 
     for template_name, output_name in config_templates:
-        if not render_template_safe(env, template_name, context, target_dir / output_name):
+        jinja_env = gh_env if template_name == "github-actions.yml.template" else env
+        if not render_template_safe(jinja_env, template_name, context, target_dir / output_name):
             failed_operations.append(f"Render {template_name}")
 
     # -------------------------------------------------------------------------
@@ -387,7 +394,7 @@ This project uses GitHub Actions. On pull requests to main it runs quality check
 """
 
     readme_template = env.from_string(readme_content)
-    with open(target_dir / "README.md", "w") as f:
+    with open(target_dir / "README.md", "w", encoding="utf-8") as f:
         f.write(readme_template.render(**context))
 
     # -------------------------------------------------------------------------
